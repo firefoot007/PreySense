@@ -1,53 +1,64 @@
-# <img src="app/appicon.svg" alt="PreySense logo" width="42" height="42" align="left">&nbsp;PreySense
+# <img src="app/appicon.svg" alt="PreySense logo" width="42" height="42" align="left"> PreySense
 
-PreySense is a fork of G-Helper adapted for Acer Predator laptops. It is a lightweight Windows utility for controlling Acer laptop performance modes, fans, GPU behavior, RGB lighting, display options, battery limits, and a compact hardware overlay without running the full Predator Sense app.
+PreySense is a lightweight Windows utility for Acer Predator laptops, forked from G-Helper. It provides quick, direct control over performance modes, fans, GPU overclocking, RGB lighting, display options, and a custom hardware overlay,completely bypassing the bloated official Predator Sense software.
 
-This project is experimental and hardware-specific. It has been developed and tested on limited Acer Predator hardware, so compatibility with other Acer models is not guaranteed.
+This project is experimental and hardware-specific. It has been developed and tested on limited Acer Predator models, so compatibility with other Acer laptops is not guaranteed.
+
+<p align="center">
+  <img src="docs/pics/Prey Sense.png" alt="Prey Sense Interface" width="380"><br>
+  <b>PreySense Interface</b>
+</p>
 
 ## Features
 
-- Performance modes: Eco, Silent, Balanced, Performance, and Turbo.
-- Profile-based settings saved per performance mode.
-- CPU power limit controls.
-- NVIDIA GPU overclock.
-- Custom Fan speed control.
-- Per-mode fan curves and saved fan settings.
-- GPU mode controls for Endurance, Standard, and Ultimate. Auto GPU behavior on battery.
-- Battery charge limit control.
-- Auto display refresh-rate switching + LCD overdrive.
-- Color profile handling for display refresh modes.
-- Keyboard RGB and logo lighting control.
-- Predator key support, including Predator key shortcuts for mode switching.
-- Compact on-screen hardware overlay with CPU/GPU temperatures, fan RPM, power, RAM/VRAM, FPS, and power graphs.
+- **Performance Modes**: Cycle between **Eco**, **Silent**, **Balanced**, **Performance**, and **Turbo**.
+- **Per-Mode Customization**: Mode-based CPU power limits, GPU offsets, and custom fan curves. Use Ctrl for point snapping in fan curves.
+- **CPU & GPU Tuning**:
+  - Direct CPU power limit (PL1 / PL2) controls.
+  - NVIDIA GPU core and memory clock overclocking offsets.
+- **GPU Mode Switching**: Toggles between **Endurance** (iGPU only), **Standard** (iGPU + dGPU), and **Ultimate** (dGPU exclusive). Includes an automatic iGPU switch toggle on battery.
+- **Predator Key Integration**: Full physical mode-switch key and custom shortcuts support. Use Predator Key + 1-5 to switch performance modes.
+- **Display Configurations**: Automatic display refresh-rate switching, LCD overdrive controls, and refresh-rate color profiles.
+- **Battery Management**: Charge limit controls to preserve battery lifespan.
+- **Keyboard RGB Control**: RGB control for keyboard.
+- **Compact Hardware Overlay**: A styled HUD showing real-time CPU/GPU temperatures, fan RPMs, power draw, RAM/VRAM utilization, FPS counter, and power graphs.
+<p align="center">
+  <img src="docs/pics/Overlay.png" alt="Prey Sense Overlay" width="380"><br>
+  <b>Hardware Performance Overlay</b>
+</p>
 
 ## Requirements
 
-- Windows 10 or Windows 11 x64.
-- Acer Predator laptop with compatible Acer WMI and AcerService interfaces.
-- Microsoft .NET 10 Windows Desktop Runtime x64.
-- Either XTU or [PawnIO](https://pawnio.eu/) driver installed for CPU power limit access.
-- Predator Sense installed for Acer Services.
+- **OS**: Windows 10 or Windows 11 x64.
+- **Hardware**: Acer Predator laptop with compatible Acer WMI and AcerService interfaces.
+- **Runtime**: Microsoft [.NET 10 Windows Desktop Runtime x64](https://dotnet.microsoft.com/download/dotnet/10.0).
+- **CPU Tuning**: [PawnIO](https://pawnio.eu/) driver installed for low-level CPU MSR/power limit access.
+- **RGB Tuning**: Predator Sense service components installed for Keyboard RGB control.
 
-## Download
+## Download & Running
 
-Download the latest release build and run `PreySense.exe` as administrator.
+1. Download the latest release.
+2. Run `PreySense.exe` as administrator.
 
 ## Building From Source
 
-Install the .NET 10 SDK, then run:
+Prerequisite: Install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
 
 ```powershell
 dotnet build app\PreySense.csproj
 ```
 
-## Acer Documentation
+## Technical Documentation
 
-- `docs/acer_wmi_documentation.md`
-- `docs/acer_service_rgb.md`
+Detailed documentation on WMI calls, offsets, and lighting controls can be found under the `docs` folder:
 
-## Registry State
+- [Acer WMI Documentation](docs/acer_wmi_documentation.md)
+- [Acer Service RGB Protocol](docs/acer_service_rgb.md)
+- [Discovered WMI Offsets](docs/discovered_offsets.md)
 
-User settings are stored under:
+### Registry State
+
+User profiles, custom fan curves, and application states are stored under:
 
 ```text
 HKCU\SOFTWARE\PreySense
@@ -55,17 +66,15 @@ HKCU\SOFTWARE\PreySense
 
 ## Contributing
 
-Contributions are welcome, especially:
+Contributions are welcome, especially for:
 
-- Hardware reports for additional Acer Predator models.
-- WMI/AcerService packet documentation.
-- Safer fallbacks for unsupported hardware.
-- UI polish and accessibility improvements.
-- Bug fixes with clear reproduction steps.
-- Documentation updates.
+- Hardware compatibility reports for additional Acer Predator models.
+- WMI and AcerService packet documentation.
+- Safe fallbacks for unsupported hardware configurations.
+- UI/UX polish, styling, and accessibility.
 
-When contributing, keep changes focused and include the laptop model, BIOS version, Windows version, GPU mode, and Acer service state when reporting hardware behavior.
+Please include your **laptop model, BIOS version, Windows version, and GPU mode** when reporting issues or submitting changes.
 
 ## Disclaimer
 
-PreySense controls low-level laptop hardware behavior. Use it at your own risk. Incorrect power, fan, GPU, display, or firmware-adjacent settings may cause instability or unexpected behavior.
+PreySense controls low-level laptop hardware behavior (fans, power limits, clocks). Use it at your own risk. Incorrect settings may cause system instability or unexpected behavior.

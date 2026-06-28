@@ -72,7 +72,7 @@ namespace PreySense.Dialogs
                 Size = new Size(yesWidth, S(30)),
                 DialogResult = DialogResult.Yes,
                 Secondary = true,
-                Margin = new Padding(0, 0, 0, 0)
+                Margin = new Padding(S(6), 0, S(6), 0)
             };
             _buttonYes.Click += (_, _) => Close();
 
@@ -82,7 +82,7 @@ namespace PreySense.Dialogs
                 Size = new Size(noWidth, S(30)),
                 DialogResult = DialogResult.No,
                 Secondary = true,
-                Margin = new Padding(0, 0, S(10), 0)
+                Margin = new Padding(S(6), 0, S(6), 0)
             };
             _buttonNo.Click += (_, _) => Close();
 

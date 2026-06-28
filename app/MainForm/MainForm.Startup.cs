@@ -45,8 +45,6 @@ namespace PreySense
             buttonGpuStandardMode.BorderColor = colorStandard;
             buttonGpuUltimateMode.BorderColor = colorTurbo;
             buttonTurboFanModePower.BorderColor = colorCustom;
-            buttonTurboFanModePower.BackColor = buttonSecond;
-            buttonTurboFanModePower.ForeColor = foreMain;
             button60Hz.BorderColor = AccentColor;
             button120Hz.BorderColor = AccentColor;
             buttonMaxRefreshRate.BorderColor = AccentColor;
@@ -73,7 +71,6 @@ namespace PreySense
 
         private void ConfigureStartupPanels()
         {
-            panelMatrix.Visible = false;
             panelScreen.Visible = true;
             panelRgb.Visible = false;
             panelBattery.Visible = true;
@@ -105,7 +102,7 @@ namespace PreySense
 
         private void QueueStartupWork()
         {
-            ClosePredatorSenseUiProcesses();
+            Task.Run(() => ClosePredatorSenseUiProcesses());
 
             if (Environment.CommandLine.Contains("-hidden"))
             {
@@ -126,9 +123,6 @@ namespace PreySense
             string[] processNames =
             [
                 "PredatorSense",
-                "PredatorSenseApp",
-                "PredatorSenseLauncher",
-                "PSLauncher"
             ];
 
             int currentProcessId = Environment.ProcessId;
@@ -177,10 +171,13 @@ namespace PreySense
                     LoadMemory();
                     SyncRefreshRateButtons(currentHz, buttonAutoRefreshRate.Activated);
                     UpdateScreenCardTitle();
-                    ApplyGammaForRefreshRate(currentHz);
                     _lastRefreshRate = currentHz;
                     LoadCurrentHardwarePowerMode();
                 }));
+
+                // Apply gamma LUT on the background thread — SetDeviceGammaRamp doesn't require UI thread
+                // and doing it here avoids blocking the first paint with a GPU display pipeline stall.
+                ApplyGammaForRefreshRate(currentHz);
             });
         }
 
@@ -207,12 +204,13 @@ namespace PreySense
                             {
                                 BeginInvoke(new Action(() =>
                                 {
-                                    DialogResult result = MessageBox.Show(
+                                    DialogResult result = Dialogs.ConfirmDialog.Show(
+                                        this,
                                         $"A new version ({latestTag}) of Prey Sense is available.\n\n" +
                                         "Would you like to open the GitHub repository to download it?",
                                         "Prey Sense - Update Available",
-                                        MessageBoxButtons.YesNo,
-                                        MessageBoxIcon.Information);
+                                        "Download",
+                                        "Later");
 
                                     if (result == DialogResult.Yes)
                                     {

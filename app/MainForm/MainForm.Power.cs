@@ -32,6 +32,7 @@ namespace PreySense
 
         private void LoadPersistedGpuState(RegistryKey key)
         {
+            bool hasSavedMode = key.GetValue("GPUMode") is int;
             int gpuMode = GetRegistryInt(key, "GPUMode", 1);
             int gpuBattery = GetRegistryInt(key, "GpuBatteryAuto", 0);
             if (gpuMode == 3)
@@ -40,6 +41,18 @@ namespace PreySense
                 gpuBattery = 1;
                 SaveState("GPUMode", 1);
                 SaveState("GpuBatteryAuto", 1);
+            }
+
+            if (!hasSavedMode)
+            {
+                bool hasIntegratedGpu = DeviceHelper.HasPresentDisplayDevice("VEN_8086");
+                bool hasDiscreteGpu = DeviceHelper.HasPresentDisplayDevice("VEN_10DE");
+
+                gpuMode = hasIntegratedGpu && hasDiscreteGpu
+                    ? 1
+                    : hasDiscreteGpu ? 2 : 0;
+
+                SaveState("GPUMode", gpuMode);
             }
 
             _gpuBatteryAuto = (gpuBattery == 1);
@@ -81,7 +94,7 @@ namespace PreySense
 
                 int rgbSpeed = RgbProfile.NormalizeStepLevel(GetRegistryInt(key, "RGB_Speed", 3));
                 int rgbDirection = GetRegistryInt(key, "RGB_Direction", 1);
-                byte direction = rgbDirection == 2 ? (byte)2 : (byte)1;
+                byte direction = rgbDirection == 1 ? (byte)1 : (byte)2;
 
                 int r = GetRegistryInt(key, "RGB_Zone0_R", 0);
                 int g = GetRegistryInt(key, "RGB_Zone0_G", 150);
@@ -332,6 +345,19 @@ namespace PreySense
                     CheckPowerSourceTransition();
                 }
             }
+            else if (e.Mode == PowerModes.Resume)
+            {
+                AppLogger.Log("System resumed from sleep. Re-applying current performance profile.");
+                byte curMode = GetActivePowerMode();
+                if (this.InvokeRequired)
+                {
+                    this.BeginInvoke(new Action(() => ApplyPowerMode(curMode)));
+                }
+                else
+                {
+                    ApplyPowerMode(curMode);
+                }
+            }
         }
 
         private void MarkGpuMode(int mode)
@@ -372,6 +398,16 @@ namespace PreySense
                 NvidiaGpuControl.RestartNVService();
                 _wmi.SetGpuMuxMode(WmiController.GpuMuxHybrid);
                 NvidiaWrapper.SetGpuMode(1);
+
+                System.Threading.Thread.Sleep(2000); // Let NV service fully restart before writing settings.
+
+                // Re-apply GPU overclock for the active performance profile now that the dGPU is back.
+                var profile = PreySense.Mode.ProfileManager.LoadProfile(_lastKnownProfile);
+                if (profile.ApplyGpuLimits)
+                {
+                    AppLogger.Log($"ApplyHardwareGpuTransition: re-applying GPU offsets after iGPU→Standard (core={profile.GpuCoreOffset:+#;-#;0}MHz, mem={profile.GpuMemoryOffset:+#;-#;0}MHz).");
+                    NvidiaWrapper.ApplyGpuSettings(profile.GpuCoreOffset, profile.GpuMemoryOffset);
+                }
             }
         }
 

@@ -2,20 +2,79 @@ namespace PreySense
 {
     internal static class Program
     {
-        public const string VersionString = "1.0.1";
+        public const string VersionString = "1.1.1";
         public static MainForm? settingsForm;
         public static Overlay.HardwareOverlay? hardwareOverlay;
         private static CancellationTokenSource? _overlayUnloadCts;
+        private static System.Threading.Mutex? _appMutex;
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+        private static extern uint RegisterWindowMessage(string lpString);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true)]
+        private static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
+        private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
 
         [STAThread]
         static void Main(string[] args)
         {
+            _appMutex = new System.Threading.Mutex(true, "PreySenseApp_Unique_System_Mutex_999", out bool createdNew);
+            if (!createdNew)
+            {
+                uint wmShowMe = RegisterWindowMessage("PREY_SENSE_SHOW_INSTANCE");
+                EnumWindows((hWnd, lParam) =>
+                {
+                    var sb = new System.Text.StringBuilder(256);
+                    GetWindowText(hWnd, sb, sb.Capacity);
+                    if (sb.ToString().StartsWith("Prey Sense", StringComparison.OrdinalIgnoreCase))
+                    {
+                        PostMessage(hWnd, wmShowMe, IntPtr.Zero, IntPtr.Zero);
+                        return false; // Found our main window, stop enumerating
+                    }
+                    return true;
+                }, IntPtr.Zero);
+                return;
+            }
+
             ApplicationConfiguration.Initialize();
             RegisterUnhandledExceptionHandlers();
 
             if (TryRunHeadlessCommand(args))
             {
                 return;
+            }
+
+            if (!PawnIO.IntelMsr.IsPawnIoAvailable(out _))
+            {
+                var result = Dialogs.ConfirmDialog.Show(
+                    null,
+                    "PawnIO is not installed. It is required to apply CPU power limits.\n\nWould you like to install it now?",
+                    "PawnIO Required",
+                    "Install PawnIO",
+                    "Continue"
+                );
+                if (result == DialogResult.Yes)
+                {
+                    try
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "https://pawnio.eu/",
+                            UseShellExecute = true
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogger.Log($"Failed to open PawnIO URL: {ex.Message}");
+                    }
+                }
             }
 
             settingsForm = new MainForm();

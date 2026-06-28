@@ -26,10 +26,6 @@ namespace PreySense.Gpu
         public NvidiaGpuControl()
         {
             _internalGpu = GetInternalDiscreteGpu();
-            if (IsValid)
-            {
-                AppLogger.Log($"NVIDIA GPU: {FullName} ({MaxCoreOffset},{MaxMemoryOffset})");
-            }
         }
 
         public bool IsValid => _internalGpu != null;
@@ -206,7 +202,7 @@ namespace PreySense.Gpu
 
             try
             {
-                var temp = ReadCurrentTemperature(true, forceWake); // Only force wake if caller requested
+                var temp = ReadCurrentTemperature(false, forceWake); // Only force wake if caller requested
 
                 IPerformanceStates20Info states = GPUApi.GetPerformanceStates20(internalGpu.Handle);
                 var p0Clocks = states.Clocks[PerformanceStateId.P0_3DPerformance];
@@ -221,7 +217,6 @@ namespace PreySense.Gpu
 
                 core = coreClock.FrequencyDeltaInkHz.DeltaValue / 1000;
                 memory = memoryClock.FrequencyDeltaInkHz.DeltaValue / 1000;
-                AppLogger.Log($"GET GPU CLOCKS: {core}, {memory}");
                 return true;
             }
             catch (Exception ex)
@@ -299,7 +294,6 @@ namespace PreySense.Gpu
             {
                 AppLogger.Log($"SET GPU CLOCKS: {core}, {memory}");
                 GPUApi.SetPerformanceStates20(internalGpu.Handle, overclock);
-                AppLogger.Log("SET GPU CLOCKS: applied successfully.");
             }
             catch (Exception ex)
             {

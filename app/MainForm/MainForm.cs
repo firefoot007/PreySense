@@ -25,15 +25,13 @@ namespace PreySense
     [SupportedOSPlatform("windows")]
     public partial class MainForm : RForm
     {
-        #region Mutex & Win32 Interop
+        #region Win32 Interop
 
-        private static readonly Mutex _appMutex = new(true, "PreySenseApp_Unique_System_Mutex_999");
-        
         [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
         private static extern uint RegisterWindowMessage(string lpString);
 
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+        [DllImport("user32.dll")]
+        private static extern bool ChangeWindowMessageFilter(uint message, uint dwFlag);
 
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -56,7 +54,6 @@ namespace PreySense
         private const int DWMWA_TRANSITIONS_FORCEDISABLED = 3;
 
         private const int SW_RESTORE = 9;
-        private const int HWND_BROADCAST = 0xffff;
         private static readonly uint WM_SHOWME = RegisterWindowMessage("PREY_SENSE_SHOW_INSTANCE");
 
         #endregion
@@ -70,6 +67,7 @@ namespace PreySense
         private QuickAccessModeWatcher? _quickAccessModeWatcher;
         private System.Windows.Forms.Timer _timer = new();
         private System.Windows.Forms.Timer _startupFadeTimer = new();
+        private bool _isFadingIn;
         private ColorDialog _colorPicker = new() { FullOpen = true };
         private NotifyIcon? _trayIcon;
         private ContextMenuStrip? _trayMenu;
@@ -89,8 +87,7 @@ namespace PreySense
         private bool _isApplyingSavedRgbState = false;
         private bool _isTelemetryUpdating = false;
         private int _fanRampUp = 0;
-        private System.Windows.Forms.Timer _batteryThrottleTimer = null!;
-        private int _targetBatteryMode = -1;
+        private int _pendingBatteryMode = -1;
         private int _maxHz = 60;
         private int _lastRefreshRate = -1;
         private int _lastAppliedGammaRefreshRate = -1;
@@ -128,12 +125,7 @@ namespace PreySense
 
         public MainForm()
         {
-            if (!_appMutex.WaitOne(TimeSpan.Zero, true))
-            {
-                PostMessage((IntPtr)HWND_BROADCAST, WM_SHOWME, IntPtr.Zero, IntPtr.Zero);
-                Environment.Exit(0);
-                return;
-            }
+            ChangeWindowMessageFilter(WM_SHOWME, 1); // MSGFLT_ALLOW: bypass UAC UIPI for second instance activation
 
             InitializeComponent();
             InitTheme(true);
@@ -151,8 +143,8 @@ namespace PreySense
             {
                 QueueStartupWork();
                 StartDeferredStartupInitialization();
-                BeginStartupFadeIn();
                 _ = Task.Run(CheckForUpdatesAsync);
+                StartFade(true);
             };
 
             _isLoaded = true;
@@ -166,28 +158,38 @@ namespace PreySense
             int val = 1;
             DwmSetWindowAttribute(this.Handle, DWMWA_TRANSITIONS_FORCEDISABLED, ref val, sizeof(int));
         }
-
-        private void BeginStartupFadeIn()
+        private void StartFade(bool fadeIn)
         {
-            if (_startupFadeTimer.Enabled)
-                return;
-
-            _startupFadeTimer.Interval = 16;
-            _startupFadeTimer.Tick -= StartupFadeTimer_Tick;
-            _startupFadeTimer.Tick += StartupFadeTimer_Tick;
+            _isFadingIn = fadeIn;
+            _startupFadeTimer.Interval = 20;
+            _startupFadeTimer.Tick -= FadeTimer_Tick;
+            _startupFadeTimer.Tick += FadeTimer_Tick;
             _startupFadeTimer.Start();
         }
 
-        private void StartupFadeTimer_Tick(object? sender, EventArgs e)
+        private void FadeTimer_Tick(object? sender, EventArgs e)
         {
-            double next = Math.Min(1.0, Opacity + 0.12);
-            Opacity = next;
-            if (next >= 1.0)
+            if (_isFadingIn)
             {
-                _startupFadeTimer.Stop();
+                double next = Math.Min(1.0, Opacity + 0.20);
+                Opacity = next;
+                if (next >= 1.0)
+                {
+                    _startupFadeTimer.Stop();
+                }
+            }
+            else
+            {
+                double next = Math.Max(0.0, Opacity - 0.20);
+                Opacity = next;
+                if (next <= 0.0)
+                {
+                    _startupFadeTimer.Stop();
+                    this.Hide();
+                    Overlay.ProcessMemoryHelper.TrimAfter();
+                }
             }
         }
-
         private void ConfigureFooterButtons()
         {
             _footerQuickActions = new FooterQuickActionsControl
@@ -212,7 +214,7 @@ namespace PreySense
             tableButtons.Controls.Add(_footerQuickActions, 0, 0);
             tableButtons.SetColumnSpan(_footerQuickActions, 2);
 
-            buttonQuit.Text = "&Quit";
+            buttonQuit.Text = "Quit";
             buttonQuit.Image = GetThemeIcon(ResizeImageToSize(Properties.Resources.icons8_quit_32, 18, 18));
             buttonQuit.ImageAlign = ContentAlignment.MiddleLeft;
             buttonQuit.TextAlign = ContentAlignment.MiddleCenter;
@@ -236,7 +238,7 @@ namespace PreySense
 
         protected override void WndProc(ref Message m)
         {
-            if (m.Msg == WM_SHOWME) ToggleAppVisibility();
+            if (WM_SHOWME != 0 && (uint)m.Msg == WM_SHOWME) ShowApp();
             base.WndProc(ref m);
         }
 
@@ -315,16 +317,6 @@ namespace PreySense
             buttonRgbLighting.Click += (s, e) => OpenRgbProfilesForm();
 
             // Battery Limit Slider
-            _batteryThrottleTimer = new System.Windows.Forms.Timer { Interval = 33 };
-            _batteryThrottleTimer.Tick += (s, e) => {
-                _batteryThrottleTimer.Stop();
-                if (_targetBatteryMode != -1)
-                {
-                    ApplyBatteryMode(_targetBatteryMode);
-                    _targetBatteryMode = -1;
-                }
-            };
-
             sliderBatteryChargeLimit.Min = 40;
             sliderBatteryChargeLimit.Max = 100;
             sliderBatteryChargeLimit.Step = 5;
@@ -341,12 +333,15 @@ namespace PreySense
                 UpdateBatteryLimitButtonFromValue(sliderBatteryChargeLimit.Value);
                 if (_isLoaded && !_isApplyingSavedBatteryLimit)
                 {
-                    int mode = (val == 80) ? 1 : 0;
-                    _targetBatteryMode = mode;
-                    if (!_batteryThrottleTimer.Enabled)
-                    {
-                        _batteryThrottleTimer.Start();
-                    }
+                    _pendingBatteryMode = (val == 80) ? 1 : 0;
+                }
+            };
+            sliderBatteryChargeLimit.Slider.ValueCommitted += (s, e) =>
+            {
+                if (_isLoaded && !_isApplyingSavedBatteryLimit && _pendingBatteryMode != -1)
+                {
+                    ApplyBatteryMode(_pendingBatteryMode);
+                    _pendingBatteryMode = -1;
                 }
             };
             labelBatteryStatusLimitTitle.Text = $"Battery Charge Limit: {sliderBatteryChargeLimit.Value}%"; // Show value at launch
@@ -354,11 +349,9 @@ namespace PreySense
             buttonBatteryFull.Click += (s, e) => {
                 int nextMode = sliderBatteryChargeLimit.Value == 80 ? 0 : 1;
                 sliderBatteryChargeLimit.Value = nextMode == 1 ? 80 : 100;
-                _targetBatteryMode = nextMode;
-                if (!_batteryThrottleTimer.Enabled)
-                {
-                    _batteryThrottleTimer.Start();
-                }
+                _pendingBatteryMode = nextMode;
+                ApplyBatteryMode(_pendingBatteryMode);
+                _pendingBatteryMode = -1;
             };
 
             buttonColorProfiles.Click += (s, e) => OpenColorForm();
@@ -375,6 +368,9 @@ namespace PreySense
         {
             if (_isTelemetryUpdating) return;
             _isTelemetryUpdating = true;
+
+            bool isFormVisible = Visible && WindowState != FormWindowState.Minimized;
+            bool showBatteryTelemetry = _showBatteryTelemetry;
 
             Task.Run(() =>
             {
@@ -394,6 +390,12 @@ namespace PreySense
 
                     ApplyActiveFanControl();
 
+                    int currentHz = _currentRefreshRate;
+                    if (isFormVisible)
+                    {
+                        currentHz = GetCurrentRefreshRate();
+                    }
+
                     BeginInvoke(new Action(() =>
                     {
                         if (IsDisposed) return;
@@ -409,15 +411,11 @@ namespace PreySense
                             labelGpuModeFan.Text = _gpuTemp > 0 ? $"GPU: {_gpuTemp}°C  {_gpuRpm} RPM" : $"GPU: 0°C  {_gpuRpm} RPM";
                         }
 
-                        if (Visible && WindowState != FormWindowState.Minimized)
-                        {
-                            _currentRefreshRate = GetCurrentRefreshRate();
-                        }
+                        _currentRefreshRate = currentHz;
 
-                        if (_showBatteryTelemetry && Visible && WindowState != FormWindowState.Minimized)
+                        if (showBatteryTelemetry && Visible && WindowState != FormWindowState.Minimized)
                             RefreshBatteryRateLabel();
 
-                        int currentHz = _currentRefreshRate;
                         if (_lastRefreshRate != currentHz)
                         {
                             _lastRefreshRate = currentHz;
@@ -629,7 +627,9 @@ namespace PreySense
             GetWindowThreadProcessId(fgWindow, out uint fgProcessId);
             bool isOurProcessActive = (fgProcessId == (uint)Environment.ProcessId);
 
-            if (this.Visible && isOurProcessActive)
+            bool anySubFormVisible = Application.OpenForms.Cast<Form>().Any(f => f != this && !f.IsDisposed && f.Visible);
+
+            if ((this.Visible || anySubFormVisible) && isOurProcessActive)
             {
                 HideApp();
             }
@@ -646,6 +646,10 @@ namespace PreySense
                 BeginInvoke(new Action(ShowApp));
                 return;
             }
+
+            _startupFadeTimer.Stop();
+            Opacity = 0;
+
             if (this.Visible)
             {
                 // Toggling ShowInTaskbar forces window handle recreation on the active virtual desktop
@@ -665,12 +669,28 @@ namespace PreySense
             this.Focus();
             this.TopMost = true;
             this.TopMost = false;
+
+            StartFade(true);
         }
 
         public void HideApp()
         {
-            this.Hide();
-            Overlay.ProcessMemoryHelper.TrimAfter();
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(HideApp));
+                return;
+            }
+
+            // Close all open sub-windows (Fans, RgbForm, ColorForm, etc.)
+            // so Predator key hides every PreySense window at once.
+            foreach (Form sub in Application.OpenForms.Cast<Form>().Where(f => f != this).ToList())
+            {
+                if (!sub.IsDisposed && sub.Visible)
+                    sub.Close();
+            }
+
+            _startupFadeTimer.Stop();
+            StartFade(false);
         }
 
         private void QuitApplication()
@@ -773,21 +793,43 @@ namespace PreySense
         {
             Task.Run(() =>
             {
+                byte detectedMode;
+
                 if (QuickAccessModeWatcher.TryGetCurrentPowerMode(out byte quickAccessMode) && IsKnownPowerMode(quickAccessMode))
                 {
                     AppLogger.Log($"LoadCurrentHardwarePowerMode: startup Quick Access SystemUsageControl 0x{quickAccessMode:X2}.");
-                    BeginInvoke(new Action(() => MarkPowerMode(quickAccessMode)));
-                    return;
+                    detectedMode = quickAccessMode;
                 }
-
-                if (!_wmi.TryGetPowerProfileAcerService(out byte mode) || !IsKnownPowerMode(mode))
+                else if (_wmi.TryGetPowerProfileAcerService(out byte acerMode) && IsKnownPowerMode(acerMode))
+                {
+                    AppLogger.Log($"LoadCurrentHardwarePowerMode: startup AcerService OPERATING_MODE 0x{acerMode:X2}.");
+                    detectedMode = acerMode;
+                }
+                else
                 {
                     AppLogger.Log("LoadCurrentHardwarePowerMode: could not read a valid AcerService OPERATING_MODE.");
                     return;
                 }
 
-                AppLogger.Log($"LoadCurrentHardwarePowerMode: startup AcerService OPERATING_MODE 0x{mode:X2}.");
-                BeginInvoke(new Action(() => MarkPowerMode(mode)));
+                BeginInvoke(new Action(() =>
+                {
+                    MarkPowerMode(detectedMode);
+                    ApplyFanCurvesForMode(detectedMode);
+                }));
+
+                // Apply saved CPU limits and GPU overclock for the detected mode.
+                // ApplyProfile internally waits 2s before writing MSR/NVAPI so the EC settles.
+                // It does not change the WMI performance mode.
+                try
+                {
+                    string modeName = PreySense.Mode.ProfileManager.ModeToProfileName(detectedMode);
+                    AppLogger.Log($"LoadCurrentHardwarePowerMode: applying startup profile settings for '{modeName}'.");
+                    PreySense.Mode.ProfileManager.ApplyProfile(modeName);
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Log($"LoadCurrentHardwarePowerMode: failed to apply startup profile settings: {ex.Message}");
+                }
             });
         }
 

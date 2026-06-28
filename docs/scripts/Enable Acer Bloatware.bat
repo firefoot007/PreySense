@@ -5,6 +5,7 @@ rem Restore the Acer/Predator Sense services that the disable script may have ch
 sc config "AcerCCAgentSvis" start= auto
 sc config "AcerDeviceEnablingServiceV2" start= auto
 sc config "AcerDIAgentSvis" start= auto
+sc config "AcerEZSvc" start= auto
 sc config "AcerLightingService" start= auto
 sc config "AcerQAAgentSvis" start= auto
 sc config "AcerServiceSvc" start= auto
