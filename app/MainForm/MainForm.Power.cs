@@ -147,6 +147,7 @@ namespace PreySense
             _fanRampUp = _applyCustomFans ? profile.FanRampUp : 1;
             _maxFanEnabled = GetRegistryInt(key, "Fan_MaxSpeed", 0) == 1;
             buttonTurboFanModePower.Activated = _applyCustomFans;
+            buttonTurboFanModePower.BorderColor = _applyCustomFans ? PreySense.UI.RForm.colorCustom : Color.Transparent;
         }
 
         private static int GetRegistryInt(RegistryKey? key, string name, int defaultValue)

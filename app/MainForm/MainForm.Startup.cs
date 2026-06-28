@@ -46,7 +46,7 @@ namespace PreySense
             buttonEnduranceMode.BorderColor = colorEco;
             buttonGpuStandardMode.BorderColor = colorStandard;
             buttonGpuUltimateMode.BorderColor = colorTurbo;
-            buttonTurboFanModePower.BorderColor = colorCustom;
+            buttonTurboFanModePower.BorderColor = Color.Transparent;
             button60Hz.BorderColor = AccentColor;
             button120Hz.BorderColor = AccentColor;
             buttonMaxRefreshRate.BorderColor = AccentColor;

@@ -458,6 +458,7 @@ namespace PreySense
         {
             _applyCustomFans = enable;
             buttonTurboFanModePower.Activated = enable;
+            buttonTurboFanModePower.BorderColor = enable ? RForm.colorCustom : Color.Transparent;
             SaveState("Fan_CurveEnabled", enable ? 1 : 0);
             if (enable)
             {
