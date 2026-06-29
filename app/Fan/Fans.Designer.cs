@@ -3,7 +3,7 @@ using System.Drawing;
 using System.Windows.Forms;
 using Microsoft.Win32;
 using PreySense.UI;
-using System.Windows.Forms.DataVisualization.Charting;
+
 using PreySense;
 
 namespace PreySense.Fan
@@ -36,21 +36,10 @@ namespace PreySense.Fan
         /// </summary>
         private void InitializeComponent()
         {
-            ChartArea chartArea1 = new ChartArea();
-            Title title1 = new Title();
-            ChartArea chartArea2 = new ChartArea();
-            Title title2 = new Title();
-            ChartArea chartArea3 = new ChartArea();
-            Title title3 = new Title();
-            ChartArea chartArea4 = new ChartArea();
-            Title title4 = new Title();
+
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(Fans));
             panelFans = new Panel();
-            tableFanCharts = new TableLayoutPanel();
-            chartGPU = new RChart();
-            chartCPU = new RChart();
-            chartXGM = new RChart();
-            chartMid = new RChart();
+
             panelTitleFans = new Panel();
             picturePerf = new PictureBox();
             labelFans = new Label();
@@ -99,11 +88,7 @@ namespace PreySense.Fan
             buttonGPU = new RButton();
             buttonCPU = new RButton();
             panelFans.SuspendLayout();
-            tableFanCharts.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)chartGPU).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)chartCPU).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)chartXGM).BeginInit();
-            ((System.ComponentModel.ISupportInitialize)chartMid).BeginInit();
+
             panelTitleFans.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)picturePerf).BeginInit();
             panelApplyFans.SuspendLayout();
@@ -136,7 +121,7 @@ namespace PreySense.Fan
             // 
             panelFans.AutoSize = true;
             panelFans.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            panelFans.Controls.Add(tableFanCharts);
+
             panelFans.Controls.Add(panelTitleFans);
             panelFans.Controls.Add(panelApplyFans);
             panelFans.Dock = DockStyle.Fill;
@@ -147,86 +132,6 @@ namespace PreySense.Fan
             panelFans.Padding = new Padding(0, 0, 10, 0);
             panelFans.Size = new Size(820, 1100);
             panelFans.TabIndex = 12;
-            // tableFanCharts
-            // 
-            tableFanCharts.AutoSize = true;
-            tableFanCharts.ColumnCount = 1;
-            tableFanCharts.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-            tableFanCharts.Controls.Add(chartGPU, 0, 1);
-            tableFanCharts.Controls.Add(chartCPU, 0, 0);
-            tableFanCharts.Controls.Add(chartXGM, 0, 2);
-            tableFanCharts.Controls.Add(chartMid, 0, 3);
-            tableFanCharts.Dock = DockStyle.Fill;
-            tableFanCharts.Location = new Point(0, 66);
-            tableFanCharts.Margin = new Padding(4);
-            tableFanCharts.Name = "tableFanCharts";
-            tableFanCharts.Padding = new Padding(10, 0, 10, 5);
-            tableFanCharts.RowCount = 4;
-            tableFanCharts.RowStyles.Add(new RowStyle(SizeType.Percent, 25F));
-            tableFanCharts.RowStyles.Add(new RowStyle(SizeType.Percent, 25F));
-            tableFanCharts.RowStyles.Add(new RowStyle(SizeType.Percent, 25F));
-            tableFanCharts.RowStyles.Add(new RowStyle(SizeType.Percent, 25F));
-            tableFanCharts.Size = new Size(810, 918);
-            tableFanCharts.TabIndex = 1;
-            // 
-            // chartGPU
-            // 
-            chartArea1.Name = "ChartArea1";
-            chartGPU.ChartAreas.Add(chartArea1);
-            chartGPU.Dock = DockStyle.Fill;
-            chartGPU.Location = new Point(12, 238);
-            chartGPU.Margin = new Padding(2, 10, 2, 10);
-            chartGPU.Name = "chartGPU";
-            chartGPU.Size = new Size(786, 208);
-            chartGPU.TabIndex = 1;
-            chartGPU.Text = "chartGPU";
-            title1.Name = "Title1";
-            chartGPU.Titles.Add(title1);
-            // 
-            // chartCPU
-            // 
-            chartArea2.Name = "ChartArea1";
-            chartCPU.ChartAreas.Add(chartArea2);
-            chartCPU.Dock = DockStyle.Fill;
-            chartCPU.Location = new Point(12, 10);
-            chartCPU.Margin = new Padding(2, 10, 2, 10);
-            chartCPU.Name = "chartCPU";
-            chartCPU.Size = new Size(786, 208);
-            chartCPU.TabIndex = 0;
-            chartCPU.Text = "chartCPU";
-            title2.Name = "Title1";
-            chartCPU.Titles.Add(title2);
-            // 
-            // chartXGM
-            // 
-            chartArea3.Name = "ChartAreaXGM";
-            chartXGM.ChartAreas.Add(chartArea3);
-            chartXGM.Dock = DockStyle.Fill;
-            chartXGM.Location = new Point(12, 694);
-            chartXGM.Margin = new Padding(2, 10, 2, 10);
-            chartXGM.Name = "chartXGM";
-            chartXGM.Size = new Size(786, 209);
-            chartXGM.TabIndex = 3;
-            chartXGM.Text = "chartXGM";
-            title3.Name = "Title4";
-            chartXGM.Titles.Add(title3);
-            chartXGM.Visible = false;
-            // 
-            // chartMid
-            // 
-            chartArea4.Name = "ChartArea3";
-            chartMid.ChartAreas.Add(chartArea4);
-            chartMid.Dock = DockStyle.Fill;
-            chartMid.Location = new Point(12, 466);
-            chartMid.Margin = new Padding(2, 10, 2, 10);
-            chartMid.Name = "chartMid";
-            chartMid.Size = new Size(786, 208);
-            chartMid.TabIndex = 2;
-            chartMid.Text = "chartMid";
-            title4.Name = "Title3";
-            chartMid.Titles.Add(title4);
-            chartMid.Visible = false;
-            // 
             // panelTitleFans
             // 
             panelTitleFans.Controls.Add(picturePerf);
@@ -782,11 +687,7 @@ namespace PreySense.Fan
             Text = "Fans and Power";
             panelFans.ResumeLayout(false);
             panelFans.PerformLayout();
-            tableFanCharts.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)chartGPU).EndInit();
-            ((System.ComponentModel.ISupportInitialize)chartCPU).EndInit();
-            ((System.ComponentModel.ISupportInitialize)chartXGM).EndInit();
-            ((System.ComponentModel.ISupportInitialize)chartMid).EndInit();
+
             panelTitleFans.ResumeLayout(false);
             panelTitleFans.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)picturePerf).EndInit();
@@ -833,11 +734,7 @@ namespace PreySense.Fan
         #endregion
         private Panel panelFans;
         private Panel panelMainControls;
-        private TableLayoutPanel tableFanCharts;
-        private RChart chartGPU;
-        private RChart chartCPU;
-        private RChart chartMid;
-        private RChart chartXGM;
+
         private Panel panelCpuLimitsSection;
         private Panel panelCpuLimitsGraph;
         private Label labelCPU;

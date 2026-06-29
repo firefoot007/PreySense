@@ -222,6 +222,26 @@ namespace PreySense.Helpers
             return "Generic Monitor";
         }
 
+        public static bool IsOledScreen()
+        {
+            try
+            {
+                var monitors = ScanMonitors();
+                foreach (var monitor in monitors)
+                {
+                    if (monitor.Name != null && monitor.Name.Contains("OLED", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"Error checking for OLED screen: {ex.Message}");
+            }
+            return false;
+        }
+
         public static System.Collections.Generic.List<MonitorRegistryEntry> ScanMonitors()
         {
             var entries = new System.Collections.Generic.List<MonitorRegistryEntry>();

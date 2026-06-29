@@ -12,6 +12,7 @@ namespace PreySense.UI
         public RComboBox()
         {
             DrawMode = UseCustomTextPadding ? DrawMode.OwnerDrawFixed : DrawMode.Normal;
+            Cursor = Cursors.Hand;
         }
 
         protected override void OnMouseWheel(MouseEventArgs e)

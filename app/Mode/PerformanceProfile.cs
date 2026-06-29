@@ -13,6 +13,7 @@ namespace PreySense.Mode
         public int CpuPl1 { get; set; } = 45;
         public int CpuPl2 { get; set; } = 65;
         public int WindowsPowerMode { get; set; } = 1; // 0 = Best power efficiency, 1 = Balanced, 2 = Best performance
+        public int CpuBoost { get; set; } = 1; // 0 = Disabled, 1 = Enabled, 2 = Aggressive, etc.
 
         // GPU Settings
         public int GpuCoreOffset { get; set; } = 0;
@@ -38,6 +39,7 @@ namespace PreySense.Mode
                     CpuPl1 = mode == 0x06 ? 45 : 55,
                     CpuPl2 = mode == 0x06 ? 50 : 140,
                     WindowsPowerMode = 0,
+                    CpuBoost = 1,
                     ApplyCpuLimits = false, ApplyGpuLimits = false, ApplyFanCurve = false
                 },
                 0x04 => new PerformanceProfile // Performance
@@ -47,6 +49,7 @@ namespace PreySense.Mode
                     CpuPl1 = 75,
                     CpuPl2 = 140,
                     WindowsPowerMode = 2,
+                    CpuBoost = 1,
                     ApplyCpuLimits = false, ApplyGpuLimits = false, ApplyFanCurve = false
                 },
                 0x05 => new PerformanceProfile // Turbo
@@ -56,6 +59,7 @@ namespace PreySense.Mode
                     CpuPl1 = 85,
                     CpuPl2 = 140,
                     WindowsPowerMode = 2,
+                    CpuBoost = 1,
                     ApplyCpuLimits = false, ApplyGpuLimits = true, ApplyFanCurve = false
                 },
                 _ => new PerformanceProfile // Balanced (default)
@@ -65,6 +69,7 @@ namespace PreySense.Mode
                     CpuPl1 = 65,
                     CpuPl2 = 140,
                     WindowsPowerMode = 1,
+                    CpuBoost = 1,
                     ApplyCpuLimits = false, ApplyGpuLimits = false, ApplyFanCurve = false
                 }
             };

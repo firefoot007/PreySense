@@ -26,18 +26,22 @@ namespace PreySense.Fan
         private Panel _curveHost = null!;
         private Panel _curveFrame = null!;
         private RCheckBox checkApplyGpuLimits = null!;
+        private RCheckBox checkMaxFans = null!;
         private RButton _buttonSaveSettings = null!;
         private RButton _buttonResetDefaults = null!;
         private RButton _buttonApplySettings = null!;
-        private NumericUpDown numPl1 = null!;
-        private NumericUpDown numPl2 = null!;
+        private RNumericUpDown numPl1 = null!;
+        private RNumericUpDown numPl2 = null!;
         private bool _enforcingPlOrder;
         private RComboBox comboPerfMode = null!;
+        private RComboBox comboCpuBoost = null!;
+        private Label labelCpuBoostTitle = null!;
         private Panel _perfModeHost = null!;
+        private Panel _powerModeHost = null!;
         private byte _activeMode;
         private byte _editingMode;
-        private NumericUpDown numGpuCoreOffset = null!;
-        private NumericUpDown numGpuMemoryOffset = null!;
+        private RNumericUpDown numGpuCoreOffset = null!;
+        private RNumericUpDown numGpuMemoryOffset = null!;
         private int _pl1MaxW = 200;
         private int _pl2MaxW = 200;
         private RNumericUpDown numFanRampUp = null!;
@@ -52,7 +56,7 @@ namespace PreySense.Fan
             _wmi = wmi;
 
             InitializeComponent();
-            InitTheme(true);
+            CreateMaxFanCheck();
 
             labelPowerModeTitle.Text = "Windows Power Mode";
             panelCpuLimitsGraph.Visible = false;
@@ -69,10 +73,7 @@ namespace PreySense.Fan
             trackGpuMemoryOffset.Maximum = 3000;
             CreateGpuRuntimeControls();
 
-            chartCPU.Visible = false;
-            chartGPU.Visible = false;
-            chartMid.Visible = false;
-            chartXGM.Visible = false;
+
 
             _cpuCurve = FanCurveStorage.DefaultCurve();
             _gpuCurve = FanCurveStorage.DefaultCurve();
@@ -81,12 +82,11 @@ namespace PreySense.Fan
             comboWindowsPowerMode.Items.Clear();
             comboWindowsPowerMode.Items.AddRange(new object[] { "Best power efficiency", "Balanced", "Best performance" });
 
-            CreateMaxFanCheck();
             ConfigureFansLayout();
 
             LoadStates();
             WireEvents();
-
+            InitTheme(true);
         }
 
         private static int IndexFromPerfMode(byte mode)

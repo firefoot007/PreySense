@@ -22,7 +22,7 @@ namespace PreySense.Mode
         /// Returns the shared IntelMsr, initializing it if needed.
         /// Returns null if the PawnIO driver is unavailable.
         /// </summary>
-        private static PawnIO.IntelMsr? GetMsr()
+        public static PawnIO.IntelMsr? GetMsr()
         {
             lock (_msrLock)
             {
@@ -92,7 +92,7 @@ namespace PreySense.Mode
                         if (msr.ReadMsr(MSR_PKG_POWER_LIMIT, out ulong currentVal))
                         {
                             // Bail early from the direct WRMSR path when firmware has write-locked it.
-                            // Other tools may still succeed through XTU services, MMIO, or OEM firmware paths.
+                            // Other tools may still succeed through MMIO or OEM firmware paths.
                             if ((currentVal & MSR_LOCK_BIT) != 0)
                             {
                                 AppLogger.Log("[Intel RAPL] PawnIO MSR 0x610 is write-locked (bit 63). Direct MSR write skipped.");

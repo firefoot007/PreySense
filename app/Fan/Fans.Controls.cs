@@ -64,7 +64,7 @@ namespace PreySense.Fan
             _cpuCurveCard = new SectionCardControl
             {
                 Dock = DockStyle.Fill,
-                SectionTitle = "CPU Fan Curve",
+                SectionTitle = "CPU Fan",
                 SectionIcon = GetSectionIcon(Properties.Resources.icons8_fan_48)
             };
             _cpuCurveCard.Body.Padding = new Padding(0);
@@ -74,20 +74,18 @@ namespace PreySense.Fan
             _gpuCurveCard = new SectionCardControl
             {
                 Dock = DockStyle.Fill,
-                SectionTitle = "GPU Fan Curve",
+                SectionTitle = "GPU Fan",
                 SectionIcon = GetSectionIcon(Properties.Resources.icons8_fan_48)
             };
             _gpuCurveCard.Body.Padding = new Padding(0);
             _gpuCurveCard.Body.Controls.Add(_curveGpu);
             _curveGpu.PointsChanged += (_, _) => OnFanCurveEdited();
 
-            tableFanCharts.Visible = false;
             _curveHost = new Panel { Dock = DockStyle.Fill, BackColor = Color.Transparent, Padding = new Padding(4, 0, 4, 4) };
             _curveFrame = new Panel { Dock = DockStyle.None, BackColor = Color.Transparent, Margin = Padding.Empty };
             _curveHost.Controls.Add(_curveFrame);
             _curveHost.Resize += (_, _) => LayoutCurveFrame();
             panelFans.Controls.Add(_curveHost);
-            panelFans.Controls.SetChildIndex(_curveHost, panelFans.Controls.IndexOf(tableFanCharts));
             LayoutCurveFrame();
             ShowCurveForMode(false);
         }
@@ -111,6 +109,17 @@ namespace PreySense.Fan
             checkApplyFanCurves.Padding = new Padding(S(8), S(6), S(8), S(6));
             checkApplyFanCurves.TextAlign = ContentAlignment.MiddleLeft;
 
+            checkMaxFans = new RCheckBox
+            {
+                Text = "Max Fans",
+                AutoSize = true,
+                Dock = DockStyle.None,
+                Margin = Padding.Empty,
+                Padding = new Padding(S(8), S(6), S(8), S(6)),
+                TextAlign = ContentAlignment.MiddleLeft,
+                UseVisualStyleBackColor = false
+            };
+
             labelFansResult.AutoSize = true;
             labelFansResult.Dock = DockStyle.None;
             labelFansResult.Margin = new Padding(S(8), 0, S(8), S(4));
@@ -128,6 +137,7 @@ namespace PreySense.Fan
                 BackColor = Color.Transparent
             };
             flow.Controls.Add(checkApplyFanCurves);
+            flow.Controls.Add(checkMaxFans);
             flow.Controls.Add(labelFansResult);
 
             panelApplyFans.Controls.Clear();
@@ -169,7 +179,7 @@ namespace PreySense.Fan
             return destImage;
         }
 
-        private NumericUpDown CreateNumControl(Panel parent, Control hideLabel, int min, int max, int val, Action<int> onValChanged)
+        private RNumericUpDown CreateNumControl(Panel parent, Control hideLabel, int min, int max, int val, Action<int> onValChanged)
         {
             float scale = parent.DeviceDpi / 96f;
             int numWidth = Math.Clamp((int)(60 * scale), 52, 76);
@@ -177,12 +187,13 @@ namespace PreySense.Fan
             int marginRight = (int)(15 * scale);
             int marginTop = Math.Max(4, (int)(8 * (parent.DeviceDpi / 192f)));
 
-            var num = new NumericUpDown
+            var num = new RNumericUpDown
             {
                 Minimum = min, Maximum = max, Value = Math.Clamp(val, min, max),
                 Size = new Size(numWidth, numHeight), BackColor = buttonMain, ForeColor = foreMain,
                 BorderStyle = BorderStyle.None, TextAlign = HorizontalAlignment.Center, Margin = Padding.Empty
             };
+            num.ApplyTheme(!UiTheme.IsLightTheme());
             num.ValueChanged += (_, _) => onValChanged((int)num.Value);
 
             var host = new FlowLayoutPanel
@@ -205,7 +216,7 @@ namespace PreySense.Fan
             int S(int px) => Math.Max(1, (int)Math.Round(px * scale));
             const int leftWidth = 460;
             const int rightWidth = 920;
-            const int formHeight = 860;
+            const int formHeight = 980;
 
             AutoSize = false;
             AutoSizeMode = AutoSizeMode.GrowAndShrink;
@@ -254,6 +265,8 @@ namespace PreySense.Fan
             panelApplyFans.Padding = new Padding(0);
             panelApplyFans.BackColor = formBack;
             checkApplyFanCurves.BackColor = buttonSecond;
+            checkMaxFans.BackColor = buttonSecond;
+            checkMaxFans.ForeColor = foreMain;
 
             var container = new FlowLayoutPanel
             {
@@ -267,7 +280,7 @@ namespace PreySense.Fan
 
             labelFanRampUp = new Label
             {
-                Text = "Ramp Up Time:",
+                Text = "Ramp Up",
                 ForeColor = foreMain,
                 Font = new Font("Segoe UI", 9f),
                 TextAlign = ContentAlignment.MiddleLeft,
@@ -280,7 +293,7 @@ namespace PreySense.Fan
             {
                 Minimum = 0,
                 Maximum = 60,
-                Value = 0,
+                Value = 5,
                 Width = S(75),
                 Height = S(28),
                 TextAlign = HorizontalAlignment.Center,
@@ -295,8 +308,10 @@ namespace PreySense.Fan
             
             // Adjust margin of the checkbox since it is now on the right
             checkApplyFanCurves.Margin = new Padding(S(12), S(2), 0, 0);
+            checkMaxFans.Margin = new Padding(S(12), S(2), 0, 0);
             
             container.Controls.Add(checkApplyFanCurves);
+            container.Controls.Add(checkMaxFans);
             panelApplyFans.Controls.Add(container);
             panelApplyFans.Controls.Add(labelFansResult);
 
@@ -492,7 +507,7 @@ namespace PreySense.Fan
             FixSectionTitle(panelCpuLimitsSectionModeTitle, picturePowerMode, labelPowerModeTitle, S);
             FixSectionTitle(panelCpuLimitsTitle, pictureBoxCPU, labelCpuLimitsTitle, S);
             FixSectionTitle(panelGpuOffsetsTitle, pictureGPU, labelGpuOffsets, S);
-            var powerModeHost = new Panel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = formBack, Margin = new Padding(0), Padding = new Padding(0, 0, 0, S(6)) };
+            _powerModeHost = new Panel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, BackColor = formBack, Margin = new Padding(0), Padding = new Padding(0, 0, 0, S(6)) };
             panelCpuLimitsSection.Controls.Remove(panelCpuLimitsSectionModeTitle);
             panelCpuLimitsSection.Controls.Remove(panelCpuLimitsSectionMode);
             panelCpuLimitsSectionModeTitle.Visible = true;
@@ -511,12 +526,78 @@ namespace PreySense.Fan
             comboWindowsPowerMode.BorderColor = formBack;
             comboWindowsPowerMode.ButtonColor = buttonMain;
             comboWindowsPowerMode.ArrowColor = foreMain;
-            powerModeHost.Controls.Add(panelCpuLimitsSectionMode);
-            powerModeHost.Controls.Add(panelCpuLimitsSectionModeTitle);
-            panelMainControls.Controls.Add(powerModeHost);
-            panelMainControls.Controls.SetChildIndex(powerModeHost, panelMainControls.Controls.Count - 1);
-            if (_perfModeHost != null && _perfModeHost.Parent == panelMainControls)
-                panelMainControls.Controls.SetChildIndex(_perfModeHost, Math.Max(0, panelMainControls.Controls.GetChildIndex(powerModeHost) - 1));
+            _powerModeHost.Controls.Add(panelCpuLimitsSectionMode);
+            _powerModeHost.Controls.Add(panelCpuLimitsSectionModeTitle);
+            panelMainControls.Controls.Add(_powerModeHost);
+
+            // Create CPU Boost UI elements
+            comboCpuBoost = new RComboBox
+            {
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                FormattingEnabled = true
+            };
+            comboCpuBoost.Items.AddRange(new object[] { 
+                "Disabled", 
+                "Enabled", 
+                "Aggressive", 
+                "Efficient Enabled", 
+                "Efficient Aggressive", 
+                "Aggressive at Guaranteed", 
+                "Efficient Aggressive at Guaranteed" 
+            });
+            comboCpuBoost.Visible = true;
+            comboCpuBoost.Dock = DockStyle.Fill;
+            comboCpuBoost.Margin = Padding.Empty;
+            comboCpuBoost.BackColor = buttonMain;
+            comboCpuBoost.ForeColor = foreMain;
+            comboCpuBoost.BorderColor = formBack;
+            comboCpuBoost.ButtonColor = buttonMain;
+            comboCpuBoost.ArrowColor = foreMain;
+
+            var cpuBoostTitlePanel = new Panel();
+            var pictureCpuBoost = new PictureBox
+            {
+                BackgroundImage = pictureBoxCPU.BackgroundImage,
+                BackgroundImageLayout = ImageLayout.Zoom,
+                InitialImage = null,
+                Size = new Size(S(24), S(24)),
+                TabStop = false
+            };
+            labelCpuBoostTitle = new Label
+            {
+                Text = "CPU Boost",
+                AutoSize = true,
+                ForeColor = foreMain,
+                Font = labelPowerModeTitle.Font
+            };
+            cpuBoostTitlePanel.Controls.Add(labelCpuBoostTitle);
+            cpuBoostTitlePanel.Controls.Add(pictureCpuBoost);
+
+            var cpuBoostContentPanel = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = S(68),
+                Padding = new Padding(0, S(8), 0, S(20))
+            };
+            cpuBoostContentPanel.Controls.Add(comboCpuBoost);
+
+            var cpuBoostHost = new Panel 
+            { 
+                Dock = DockStyle.Top, 
+                AutoSize = true, 
+                AutoSizeMode = AutoSizeMode.GrowAndShrink, 
+                BackColor = formBack, 
+                Margin = new Padding(0), 
+                Padding = new Padding(0, 0, 0, S(6)) 
+            };
+            cpuBoostHost.Controls.Add(cpuBoostContentPanel);
+            cpuBoostHost.Controls.Add(cpuBoostTitlePanel);
+
+            panelCpuLimitsSection.Controls.Add(cpuBoostHost);
+
+            FixSectionTitle(cpuBoostTitlePanel, pictureCpuBoost, labelCpuBoostTitle, S);
+
+            SetTopDockOrder(panelMainControls, _powerModeHost, panelCpuLimitsSection, panelGpuOffsetsSection, panelNav, _perfModeHost);
             BuildSliderRow(panelPl1, labelLeftPl1, "PL1 (W)", labelPl1, trackPl1, numPl1, S);
             BuildSliderRow(panelPl2, labelLeftPl2, "PL2 (W)", labelPl2, trackPl2, numPl2, S);
             panelApplyCpuLimits.AutoSize = true;
@@ -524,7 +605,7 @@ namespace PreySense.Fan
             panelApplyCpuLimits.Dock = DockStyle.Top;
             panelApplyCpuLimits.Padding = new Padding(S(4), S(6), S(4), S(6));
             panelCpuLimitsSection.AutoSize = true;
-            SetTopDockOrder(panelCpuLimitsSection, panelApplyCpuLimits, panelPl2, panelPl1, panelCpuLimitsTitle);
+            SetTopDockOrder(panelCpuLimitsSection, cpuBoostHost, panelApplyCpuLimits, panelPl2, panelPl1, panelCpuLimitsTitle);
             BuildSliderRow(panelGpuOffsetsSectionCore, labelGpuCoreTitle, "Core Offset (MHz)", labelGpuCoreValue, trackGpuCoreOffset, numGpuCoreOffset, S);
             BuildSliderRow(panelGpuOffsetsSectionMemory, labelGpuMemoryTitle, "Memory Offset (MHz)", labelGpuMemoryValue, trackGpuMemoryOffset, numGpuMemoryOffset, S);
             panelGpuOffsetsSection.AutoSize = true;
@@ -532,7 +613,7 @@ namespace PreySense.Fan
             SetTopDockOrder(panelGpuOffsetsSection, panelGpuOffsetsSectionMemory, panelGpuOffsetsSectionCore, panelGpuOffsetsTitle);
         }
 
-        private void BuildSliderRow(Panel panel, Label titleLabel, string titleText, Label hideLabel, RTrackBar track, NumericUpDown numeric, Func<int, int> S)
+        private void BuildSliderRow(Panel panel, Label titleLabel, string titleText, Label hideLabel, RTrackBar track, RNumericUpDown numeric, Func<int, int> S)
         {
             hideLabel.Visible = false;
             Control host = numeric.Parent ?? panel;

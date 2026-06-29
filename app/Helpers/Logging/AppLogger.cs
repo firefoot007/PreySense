@@ -9,6 +9,17 @@ namespace PreySense
 
         public static void Log(string message)
         {
+            if (string.IsNullOrEmpty(message)) return;
+
+            // Only log errors, warnings, failures, and critical issues for performance & lightweight disk usage
+            bool isErrorOrWarning = message.Contains("error", StringComparison.OrdinalIgnoreCase) ||
+                                    message.Contains("fail", StringComparison.OrdinalIgnoreCase) ||
+                                    message.Contains("exception", StringComparison.OrdinalIgnoreCase) ||
+                                    message.Contains("warning", StringComparison.OrdinalIgnoreCase) ||
+                                    message.Contains("conflict", StringComparison.OrdinalIgnoreCase);
+
+            if (!isErrorOrWarning) return;
+
             lock (LockObj)
             {
                 try

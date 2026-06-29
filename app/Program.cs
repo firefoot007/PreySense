@@ -2,7 +2,7 @@ namespace PreySense
 {
     internal static class Program
     {
-        public const string VersionString = "1.2.0";
+        public const string VersionString = "1.2.5";
         public static MainForm? settingsForm;
         public static Overlay.HardwareOverlay? hardwareOverlay;
         private static CancellationTokenSource? _overlayUnloadCts;
@@ -62,17 +62,80 @@ namespace PreySense
                 );
                 if (result == DialogResult.Yes)
                 {
-                    try
+                    MessageBox.Show(
+                        "Downloading the latest PawnIO driver installer.\n\nPlease click Yes on the Windows administrator prompt (UAC) when it appears to allow the driver installation to complete.",
+                        "Installing PawnIO",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information
+                    );
+
+                    bool installed = Task.Run(async () =>
                     {
-                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        string tempPath = Path.Combine(Path.GetTempPath(), "PawnIO_setup.exe");
+                        try
                         {
-                            FileName = "https://pawnio.eu/",
-                            UseShellExecute = true
-                        });
-                    }
-                    catch (Exception ex)
+                            using var client = new System.Net.Http.HttpClient();
+                            var responseBytes = await client.GetByteArrayAsync("https://github.com/namazso/PawnIO.Setup/releases/latest/download/PawnIO_setup.exe");
+                            await File.WriteAllBytesAsync(tempPath, responseBytes);
+
+                            var psi = new System.Diagnostics.ProcessStartInfo
+                            {
+                                FileName = tempPath,
+                                Arguments = "-install -silent",
+                                UseShellExecute = true,
+                                Verb = "runas"
+                            };
+
+                            using var process = System.Diagnostics.Process.Start(psi);
+                            if (process != null)
+                            {
+                                await process.WaitForExitAsync();
+                                return process.ExitCode == 0;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            AppLogger.Log($"PawnIO automatic installation failed: {ex.Message}");
+                        }
+                        finally
+                        {
+                            try
+                            {
+                                if (File.Exists(tempPath))
+                                    File.Delete(tempPath);
+                            }
+                            catch { }
+                        }
+                        return false;
+                    }).GetAwaiter().GetResult();
+
+                    if (installed && PawnIO.IntelMsr.IsPawnIoAvailable(out _))
                     {
-                        AppLogger.Log($"Failed to open PawnIO URL: {ex.Message}");
+                        MessageBox.Show("PawnIO has been successfully installed!", "PawnIO Installed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                    else
+                    {
+                        var openUrl = MessageBox.Show(
+                            "PawnIO automatic installation did not complete successfully.\n\nWould you like to open the website to download and install it manually?",
+                            "Installation Failed",
+                            MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Warning
+                        );
+                        if (openUrl == DialogResult.Yes)
+                        {
+                            try
+                            {
+                                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                                {
+                                    FileName = "https://pawnio.eu/",
+                                    UseShellExecute = true
+                                });
+                            }
+                            catch (Exception ex)
+                            {
+                                AppLogger.Log($"Failed to open PawnIO URL: {ex.Message}");
+                            }
+                        }
                     }
                 }
             }

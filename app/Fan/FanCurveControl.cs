@@ -78,15 +78,16 @@ namespace PreySense.Fan
         private PointF GetPixelCoords(PointF point)
         {
             float x = LeftPad + ((point.X - TempMin) / (TempMax - TempMin)) * GraphWidth;
-            float y = TopPad + ((100f - point.Y) / 100f) * GraphHeight;
+            float clampedY = Math.Clamp(point.Y, 10f, 100f);
+            float y = TopPad + ((100f - clampedY) / 90f) * GraphHeight;
             return new PointF(x, y);
         }
 
         private PointF GetValueCoords(float pixelX, float pixelY)
         {
             float x = TempMin + ((pixelX - LeftPad) / GraphWidth) * (TempMax - TempMin);
-            float y = 100f - ((pixelY - TopPad) / GraphHeight) * 100f;
-            return new PointF(Math.Clamp(x, TempMin, TempMax), Math.Clamp(y, 0f, 100f));
+            float y = 100f - ((pixelY - TopPad) / GraphHeight) * 90f;
+            return new PointF(Math.Clamp(x, TempMin, TempMax), Math.Clamp(y, 10f, 100f));
         }
 
         private static string GetYLabel(int percentage) => $"{percentage}%";
@@ -112,17 +113,14 @@ namespace PreySense.Fan
                 DrawCenteredLabel(g, $"{t}", font, labelBrush, x, Height - BottomPad + 5);
             }
 
-            for (int i = 0; i <= 100; i += 10)
+            for (int i = 10; i <= 100; i += 10)
             {
-                float y = TopPad + ((100 - i) / 100f) * GraphHeight;
+                float y = TopPad + ((100 - i) / 90f) * GraphHeight;
                 g.DrawLine(gridPen, LeftPad, y, Width - RightPad, y);
 
-                if (i % 20 == 0 || i == 100)
-                {
-                    string label = GetYLabel(i);
-                    SizeF size = g.MeasureString(label, font);
-                    g.DrawString(label, font, labelBrush, Math.Max(0, LeftPad - size.Width - 3), y - size.Height / 2);
-                }
+                string label = GetYLabel(i);
+                SizeF size = g.MeasureString(label, font);
+                g.DrawString(label, font, labelBrush, Math.Max(0, LeftPad - size.Width - 3), y - size.Height / 2);
             }
         }
 
@@ -188,7 +186,9 @@ namespace PreySense.Fan
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
-            Color themeColor = _isCpu ? Color.FromArgb(58, 174, 239) : Color.FromArgb(255, 32, 32);
+            Color themeColor = Enabled
+                ? (_isCpu ? Color.FromArgb(58, 174, 239) : Color.FromArgb(255, 32, 32))
+                : Color.FromArgb(120, 120, 120);
 
             using (var bgBrush = new SolidBrush(BackColor))
             {
@@ -203,8 +203,17 @@ namespace PreySense.Fan
             DrawNodes(g, themeColor);
         }
 
+        protected override void OnEnabledChanged(EventArgs e)
+        {
+            base.OnEnabledChanged(e);
+            Cursor = Enabled ? Cursors.Hand : Cursors.Default;
+            Invalidate();
+        }
+
         protected override void OnMouseDown(MouseEventArgs e)
         {
+            if (!Enabled) return;
+
             if (e.Button == MouseButtons.Left)
             {
                 _draggedIndex = FindNodeIndex(e.Location);
@@ -221,6 +230,8 @@ namespace PreySense.Fan
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
+            if (!Enabled) return;
+
             if (_draggedIndex != -1)
             {
                 float finalY = GetValueCoords(e.X, e.Y).Y;
@@ -233,11 +244,7 @@ namespace PreySense.Fan
                 if (Math.Abs(current.Y - finalY) >= 0.1f)
                 {
                     _points[_draggedIndex] = new PointF(current.X, finalY);
-                    if (_dragRedrawClock.ElapsedMilliseconds >= DragRedrawIntervalMs)
-                    {
-                        _dragRedrawClock.Restart();
-                        Invalidate();
-                    }
+                    Invalidate();
                 }
             }
             else
@@ -255,6 +262,8 @@ namespace PreySense.Fan
 
         protected override void OnMouseUp(MouseEventArgs e)
         {
+            if (!Enabled) return;
+
             bool wasDragging = _draggedIndex != -1;
             if (wasDragging)
             {

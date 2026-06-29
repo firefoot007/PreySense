@@ -13,7 +13,6 @@ namespace PreySense.Overlay
         private Color _accent = Color.FromArgb(58, 174, 239);
         private Image? _icon;
         private Font? _bodyFont;
-        private Font? _captionFont;
         private bool _disposed;
         private DateTime _fadeStartedAt;
         private const int FadeOutDurationMs = 140;
@@ -40,9 +39,9 @@ namespace PreySense.Overlay
             _icon = icon;
 
             Screen screen = Screen.FromPoint(Cursor.Position);
-            const int width = 208;
-            const int height = 62;
-            const int bottomMargin = 64;
+            const int width = 220;
+            const int height = 48;
+            const int bottomMargin = 80;
             Size = new Size(width, height);
             Location = new Point(
                 screen.WorkingArea.Left + (screen.WorkingArea.Width - width) / 2,
@@ -62,43 +61,36 @@ namespace PreySense.Overlay
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
-            _captionFont ??= new Font("Segoe UI", 7.5f, FontStyle.Bold, GraphicsUnit.Point);
-            _bodyFont ??= new Font("Segoe UI", 9.5f, FontStyle.Bold, GraphicsUnit.Point);
+            _bodyFont ??= new Font("Segoe UI", 10.5f, FontStyle.Bold, GraphicsUnit.Point);
 
             Rectangle bounds = Bound;
-            using var shadowBrush = new SolidBrush(Color.FromArgb(70, 0, 0, 0));
-            using var bgBrush = new SolidBrush(Color.FromArgb(235, 20, 20, 20));
-            using var textBrush = new SolidBrush(Color.FromArgb(245, 245, 245));
-            using var captionBrush = new SolidBrush(Color.FromArgb(225, _accent));
-            using var borderPen = new Pen(_accent, 4f);
-            const int cornerRadius = 6;
+            using var shadowBrush = new SolidBrush(Color.FromArgb(50, 0, 0, 0));
+            using var bgBrush = new SolidBrush(Color.FromArgb(200, 18, 18, 22));
+            using var textBrush = new SolidBrush(Color.FromArgb(240, 240, 240));
+            using var borderPen = new Pen(Color.FromArgb(90, _accent), 1.5f);
+            const int cornerRadius = 24;
 
-            var shadowBounds = new Rectangle(bounds.X, bounds.Y + 3, bounds.Width, bounds.Height - 1);
+            var shadowBounds = new Rectangle(bounds.X, bounds.Y + 2, bounds.Width, bounds.Height);
             g.FillRoundedRectangle(shadowBrush, shadowBounds, cornerRadius);
             g.FillRoundedRectangle(bgBrush, bounds, cornerRadius);
-            g.DrawRoundedRectangle(borderPen, new Rectangle(bounds.X + 1, bounds.Y + 1, bounds.Width - 3, bounds.Height - 3), cornerRadius);
+            g.DrawRoundedRectangle(borderPen, new Rectangle(bounds.X + 1, bounds.Y + 1, bounds.Width - 2, bounds.Height - 2), cornerRadius);
 
-            const int iconSize = 18;
-            const int gap = 9;
-            const int captionGap = 1;
+            const int iconSize = 20;
+            const int gap = 12;
             SizeF textSize = g.MeasureString(_message, _bodyFont);
-            SizeF captionSize = g.MeasureString("MODE", _captionFont);
             int contentWidth = (_icon != null ? iconSize + gap : 0) + (int)Math.Ceiling(textSize.Width);
             int startX = (bounds.Width - contentWidth) / 2;
             int centerY = bounds.Height / 2;
-            int totalTextHeight = (int)Math.Ceiling(captionSize.Height + captionGap + textSize.Height);
-            int contentTop = centerY - totalTextHeight / 2;
 
             if (_icon != null)
             {
-                int iconY = centerY - iconSize / 2 + 1;
+                int iconY = centerY - iconSize / 2;
                 g.DrawImage(_icon, new Rectangle(startX, iconY, iconSize, iconSize));
                 startX += iconSize + gap;
             }
 
-            float captionX = startX + ((float)Math.Ceiling(textSize.Width) - captionSize.Width) / 2f;
-            g.DrawString("MODE", _captionFont, captionBrush, new PointF(captionX, contentTop));
-            g.DrawString(_message, _bodyFont, textBrush, new PointF(startX, contentTop + captionSize.Height + captionGap));
+            float textY = centerY - textSize.Height / 2f;
+            g.DrawString(_message, _bodyFont, textBrush, new PointF(startX, textY));
         }
 
         protected override void Dispose(bool disposing)
@@ -111,7 +103,6 @@ namespace PreySense.Overlay
                 _hideTimer.Dispose();
                 _fadeTimer.Stop();
                 _fadeTimer.Dispose();
-                _captionFont?.Dispose();
                 _bodyFont?.Dispose();
             }
 

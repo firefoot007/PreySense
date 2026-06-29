@@ -1,8 +1,6 @@
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
-using System.Windows.Forms.DataVisualization.Charting;
-
 namespace PreySense.UI;
 
 public static class ControlHelper
@@ -195,7 +193,7 @@ public static class ControlHelper
             if (chk != null)
             {
                 chk.ForeColor = RForm.foreMain;
-                if (chk.BackColor != RForm.formBack)
+                if (chk.BackColor != RForm.formBack && chk.BackColor != Color.Transparent)
                 {
                     chk.BackColor = RForm.buttonSecond;
                     if (chk is RCheckBox)
@@ -204,29 +202,7 @@ public static class ControlHelper
                 SetWindowTheme(chk.Handle, _darkMode ? "DarkMode_Explorer" : "Explorer", null);
             }
 
-            var chart = control as Chart;
-            if (chart != null)
-            {
-                chart.BackColor = RForm.chartMain;
-                chart.ChartAreas[0].BackColor = RForm.chartMain;
 
-                chart.ChartAreas[0].AxisX.TitleForeColor = RForm.foreMain;
-                chart.ChartAreas[0].AxisY.TitleForeColor = RForm.foreMain;
-
-                chart.ChartAreas[0].AxisX.LabelStyle.ForeColor = RForm.foreMain;
-                chart.ChartAreas[0].AxisY.LabelStyle.ForeColor = RForm.foreMain;
-
-                chart.ChartAreas[0].AxisX.MajorTickMark.LineColor = RForm.foreMain;
-                chart.ChartAreas[0].AxisY.MajorTickMark.LineColor = RForm.foreMain;
-
-                chart.ChartAreas[0].AxisX.MajorGrid.LineColor = RForm.chartGrid;
-                chart.ChartAreas[0].AxisY.MajorGrid.LineColor = RForm.chartGrid;
-                chart.ChartAreas[0].AxisX.LineColor = RForm.chartGrid;
-                chart.ChartAreas[0].AxisY.LineColor = RForm.chartGrid;
-
-                chart.Titles[0].ForeColor = RForm.foreMain;
-
-            }
 
         }
     }

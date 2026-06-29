@@ -296,227 +296,23 @@ namespace PreySense
                 _serviceAvailable = false;
                 return false;
             }
-
             _serviceAvailable = true;
             return response.Contains("\"result\"") && (response.Contains("\"0\"") || response.Contains(": 0") || response.Contains(":0"));
         }
 
         /// <summary>
-        /// Set operating mode (performance profile) via AcerService socket.
-        /// </summary>
-        public bool SetOperatingMode(int mode)
-        {
-            if (!_serviceAvailable) return false;
-
-            string json = $"{{\"Function\":\"{AcerWmi.Service.OperatingMode}\",\"Parameter\":{{\"mode\":{mode}}}}}";
-
-            var response = SendCommand(AcerWmi.Service.SetDeviceDataPacket, json);
-
-            if (response == null)
-            {
-                _serviceAvailable = false;
-                return false;
-            }
-
-            _serviceAvailable = true;
-            return response.Contains("\"result\"") && (response.Contains("\"0\"") || response.Contains(": 0") || response.Contains(":0"));
-        }
-
-        /// <summary>
-        /// Switch DTS:X sound mode preset.
-        /// Modes: 0=Music, 1=Movie, 2=Voice, 3=Strategy, 4=RPG, 5=Shooter, 10=Auto
-        /// </summary>
-        public bool SetSoundMode(int mode)
-        {
-            if (!_serviceAvailable) return false;
-
-            string json = $"{{\"Function\":\"{AcerWmi.Service.SoundMode}\",\"Parameter\":{{\"mode\":{mode},\"function\":\"DTS\"}}}}";
-
-            var response = SendCommand(AcerWmi.Service.SetDeviceDataPacket, json);
-
-            return CheckResponse(response);
-        }
-
-        /// <summary>
-        /// Lock/unlock the Windows key on the keyboard.
-        /// </summary>
-        public bool SetWinKeyLock(bool locked)
-        {
-            if (!_serviceAvailable) return false;
-
-            int status = locked ? 0 : 1;
-            string json = $"{{\"Function\":\"{AcerWmi.Service.WinKey}\",\"Parameter\":{{\"status\":{status}}}}}";
-
-            var response = SendCommand(AcerWmi.Service.SetDeviceDataPacket, json);
-
-            return CheckResponse(response);
-        }
-
-        /// <summary>
-        /// Toggle Windows Sticky Keys utility.
-        /// </summary>
-        public bool SetStickyKeys(bool enabled)
-        {
-            if (!_serviceAvailable) return false;
-
-            int status = enabled ? 1 : 0;
-            string json = $"{{\"Function\":\"{AcerWmi.Service.StickyKey}\",\"Parameter\":{{\"status\":{status}}}}}";
-
-            var response = SendCommand(AcerWmi.Service.SetDeviceDataPacket, json);
-
-            return CheckResponse(response);
-        }
-
-        /// <summary>
-        /// Toggle the startup splash chime sound.
-        /// </summary>
-        public bool SetBootSound(bool enabled)
-        {
-            if (!_serviceAvailable) return false;
-
-            int status = enabled ? 1 : 0;
-            string json = $"{{\"Function\":\"{AcerWmi.Service.BootSound}\",\"Parameter\":{{\"status\":{status}}}}}";
-
-            var response = SendCommand(AcerWmi.Service.SetDeviceDataPacket, json);
-
-            return CheckResponse(response);
-        }
-
-        /// <summary>
-        /// Toggle LCD panel overdrive via socket (reduces panel latency).
-        /// </summary>
-        public bool SetLcdOverdrive(bool enabled)
-        {
-            if (!_serviceAvailable) return false;
-
-            int status = enabled ? 1 : 0;
-            string json = $"{{\"Function\":\"{AcerWmi.Service.LcdOverdrive}\",\"Parameter\":{{\"status\":{status}}}}}";
-
-            var response = SendCommand(AcerWmi.Service.SetDeviceDataPacket, json);
-
-            return CheckResponse(response);
-        }
-
-        /// <summary>
-        /// GPU MUX switch control. Mode 2 = Hybrid Optimus, Mode 1 = Discrete GPU Only.
-        /// Requires reboot to take effect.
+        /// Set GPU Mux mode via AcerService.
         /// </summary>
         public bool SetGpuMode(int mode)
         {
             if (!_serviceAvailable) return false;
-
+            // mode = 1 (Discrete/Ultimate), mode = 2 (Hybrid/Optimus/Standard/Endurance)
             string json = $"{{\"Function\":\"{AcerWmi.Service.GpuMode}\",\"Parameter\":{{\"mode\":{mode}}}}}";
-
             var response = SendCommand(AcerWmi.Service.SetDeviceDataPacket, json);
-
             return CheckResponse(response);
         }
 
-        /// <summary>
-        /// Control Dynamic Refresh Rate parameters of the display panel.
-        /// </summary>
-        public bool SetPanelDfrMode(int mode)
-        {
-            if (!_serviceAvailable) return false;
 
-            string json = $"{{\"Function\":\"{AcerWmi.Service.PanelDfrMode}\",\"Parameter\":{{\"mode\":{mode}}}}}";
-
-            var response = SendCommand(AcerWmi.Service.SetDeviceDataPacket, json);
-
-            return CheckResponse(response);
-        }
-
-        /// <summary>
-        /// Set fan control via socket. mode: 0=Auto, 1=Max, 2=Custom.
-        /// When returning to auto (mode 0), include fan_custom_auto=1 like Predator Sense
-        /// so the EC keeps the stored slider positions during the handoff instead of
-        /// dropping fans to 0 while the auto table reloads.
-        /// </summary>
-        public bool SetFanControl(int mode, int cpuSpeed = 50, int gpuSpeed = 50)
-        {
-            if (!_serviceAvailable) return false;
-
-            cpuSpeed = Math.Clamp(cpuSpeed, 0, 100);
-            gpuSpeed = Math.Clamp(gpuSpeed, 0, 100);
-
-            string customData = mode switch
-            {
-                2 => $",\"custom_fan_data\":[{{\"fan_custom_auto\":0,\"fan_custom_speed\":{cpuSpeed},\"fan_name\":\"CPU\"}},{{\"fan_custom_auto\":0,\"fan_custom_speed\":{gpuSpeed},\"fan_name\":\"GPU\"}}]",
-                0 => $",\"custom_fan_data\":[{{\"fan_custom_auto\":1,\"fan_custom_speed\":{cpuSpeed},\"fan_name\":\"CPU\"}},{{\"fan_custom_auto\":1,\"fan_custom_speed\":{gpuSpeed},\"fan_name\":\"GPU\"}}]",
-                _ => ""
-            };
-            string json = $"{{\"Function\":\"{AcerWmi.Service.FanControl}\",\"Parameter\":{{\"mode\":{mode}{customData}}}}}";
-
-            var response = SendCommand(AcerWmi.Service.SetDeviceDataPacket, json);
-
-            return CheckResponse(response);
-        }
-
-        /// <summary>
-        /// Query rich telemetry data from the telemetry port (46753).
-        /// Returns raw JSON string with CPU/GPU usage, RAM, WiFi stats, per-core frequencies.
-        /// </summary>
-        public string? GetTelemetryData()
-        {
-            try
-            {
-                using var client = new TcpClient();
-                var connectResult = client.BeginConnect("127.0.0.1", AcerWmi.Service.TelemetryPort, null, null);
-                if (!connectResult.AsyncWaitHandle.WaitOne(500))
-                    return null;
-                client.EndConnect(connectResult);
-
-                client.SendTimeout = 2000;
-                client.ReceiveTimeout = 2000;
-
-                var stream = client.GetStream();
-
-                // Build telemetry request: Packet ID 10 (GET_MONITOR_DATA), payload = {}
-                byte[] payloadBytes = _aesKey != null
-                    ? EncryptAes("{}")
-                    : Encoding.UTF8.GetBytes("{}");
-
-                byte[] packet = new byte[8 + payloadBytes.Length];
-                MAGIC.CopyTo(packet, 0);
-                BitConverter.GetBytes((uint)10).CopyTo(packet, 4); // GET_MONITOR_DATA = 10
-                payloadBytes.CopyTo(packet, 8);
-
-                stream.Write(packet, 0, packet.Length);
-
-                byte[] buf = new byte[32768];
-                int read = stream.Read(buf, 0, buf.Length);
-                if (read == 0) return null;
-
-                int jsonStart = 0;
-                if (read >= 8 && buf[0] == 'A' && buf[1] == 'C' && buf[2] == 'E' && buf[3] == 'R')
-                {
-                    jsonStart = 8;
-                }
-
-                byte[] payload = new byte[read - jsonStart];
-                Array.Copy(buf, jsonStart, payload, 0, payload.Length);
-
-                string response = _aesKey != null
-                    ? DecryptAes(payload)
-                    : Encoding.UTF8.GetString(payload);
-
-                return response;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Telemetry query failed: {ex.Message}");
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// Query AC adapter / power connection status via socket.
-        /// </summary>
-        public string? GetAcStatus()
-        {
-            string json = $"{{\"Function\":\"{AcerWmi.Service.AcStatus}\"}}";
-            return SendCommand(AcerWmi.Service.SetDeviceDataPacket, json);
-        }
 
         /// <summary>
         /// Query current device state (packet 20 GET_UPDATED_DATA).

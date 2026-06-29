@@ -36,38 +36,35 @@ namespace PreySense
             public uint DefaultAlert2;
         }
 
-        private string GetBatteryRateString()
+        private unsafe string GetBatteryRateString()
         {
             try
             {
-                int size = Marshal.SizeOf<SYSTEM_BATTERY_STATE>();
-                IntPtr buffer = Marshal.AllocHGlobal(size);
-                try
-                {
-                    uint status = CallNtPowerInformation(SystemBatteryStateInformation, IntPtr.Zero, 0, buffer, (uint)size);
-                    if (status != 0)
-                        return "Charge: --%";
+                SYSTEM_BATTERY_STATE state = default;
+                uint status = CallNtPowerInformation(
+                    SystemBatteryStateInformation,
+                    IntPtr.Zero,
+                    0,
+                    (IntPtr)(&state),
+                    (uint)sizeof(SYSTEM_BATTERY_STATE));
 
-                    var state = Marshal.PtrToStructure<SYSTEM_BATTERY_STATE>(buffer);
-                    if (!state.BatteryPresent)
-                        return "Charge: --%";
-
-                    int rate = state.Rate;
-                    if (rate > 0)
-                        return $"Charging: {rate / 1000.0:F1}W";
-
-                    if (!state.AcOnLine && rate < 0)
-                        return $"Discharging: {Math.Abs(rate) / 1000.0:F1}W";
-
-                    if (state.AcOnLine && rate == 0)
-                        return "Plugged in";
-
+                if (status != 0)
                     return "Charge: --%";
-                }
-                finally
-                {
-                    Marshal.FreeHGlobal(buffer);
-                }
+
+                if (!state.BatteryPresent)
+                    return "Charge: --%";
+
+                int rate = state.Rate;
+                if (rate > 0)
+                    return $"Charging: {rate / 1000.0:F1}W";
+
+                if (!state.AcOnLine && rate < 0)
+                    return $"Discharging: {Math.Abs(rate) / 1000.0:F1}W";
+
+                if (state.AcOnLine && rate == 0)
+                    return "Plugged in";
+
+                return "Charge: --%";
             }
             catch
             {
@@ -87,9 +84,17 @@ namespace PreySense
         {
             if (sliderBatteryChargeLimit == null) return;
 
-            sliderBatteryChargeLimit.Value = mode == 1 ? 80 : 100;
-            labelBatteryStatusLimitTitle.Text = $"Battery Charge Limit: {sliderBatteryChargeLimit.Value}%";
-            UpdateBatteryLimitButtonFromValue(sliderBatteryChargeLimit.Value);
+            _isApplyingSavedBatteryLimit = true;
+            try
+            {
+                sliderBatteryChargeLimit.Value = mode == 1 ? 80 : 100;
+                labelBatteryStatusLimitTitle.Text = $"Battery Charge Limit: {sliderBatteryChargeLimit.Value}%";
+                UpdateBatteryLimitButtonFromValue(sliderBatteryChargeLimit.Value);
+            }
+            finally
+            {
+                _isApplyingSavedBatteryLimit = false;
+            }
         }
 
         private void UpdateBatteryLimitButtonFromValue(int value)

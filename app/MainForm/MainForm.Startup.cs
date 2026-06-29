@@ -46,7 +46,7 @@ namespace PreySense
             buttonEnduranceMode.BorderColor = colorEco;
             buttonGpuStandardMode.BorderColor = colorStandard;
             buttonGpuUltimateMode.BorderColor = colorTurbo;
-            buttonTurboFanModePower.BorderColor = Color.Transparent;
+            buttonTurboFanModePower.BorderColor = borderSecond;
             button60Hz.BorderColor = AccentColor;
             button120Hz.BorderColor = AccentColor;
             buttonMaxRefreshRate.BorderColor = AccentColor;
@@ -88,11 +88,13 @@ namespace PreySense
 
         private void ConfigureStartupActions()
         {
-            checkRunOnStartup.Checked = IsRunOnStartupEnabled();
+            checkRunOnStartup.ShowBorder = false;
+            checkRunOnStartup.BackColor = Color.Transparent;
             checkRunOnStartup.ForeColor = foreMain;
             checkRunOnStartup.UseVisualStyleBackColor = false;
-            checkRunOnStartup.CheckedChanged += (_, _) => SetRunOnStartup(checkRunOnStartup.Checked);
 
+            checkAutoGpuBattery.ShowBorder = false;
+            checkAutoGpuBattery.BackColor = Color.Transparent;
             checkAutoGpuBattery.Checked = IsGpuBatteryAutoEnabled();
             checkAutoGpuBattery.ForeColor = foreMain;
             checkAutoGpuBattery.UseVisualStyleBackColor = false;
@@ -116,20 +118,9 @@ namespace PreySense
         private void QueueStartupWork()
         {
             Task.Run(() => ClosePredatorSenseUiProcesses());
-
-            if (Environment.CommandLine.Contains("-hidden"))
-            {
-                HideApp();
-            }
-
-            CheckCalibration();
             ApplySavedBatteryLimitAsync();
-
-            _ = Task.Run(() =>
-            {
-                _wmi.RefreshAcerService();
-            });
         }
+
 
         private static void ClosePredatorSenseUiProcesses()
         {
@@ -171,6 +162,7 @@ namespace PreySense
             {
                 int maxHz = GetMaxRefreshRate();
                 int currentHz = GetCurrentRefreshRate();
+                bool runOnStartup = IsRunOnStartupEnabled();
 
                 BeginInvoke(new Action(() =>
                 {
@@ -185,6 +177,10 @@ namespace PreySense
                     SyncRefreshRateButtons(currentHz, buttonAutoRefreshRate.Activated);
                     UpdateScreenCardTitle();
                     _lastRefreshRate = currentHz;
+
+                    checkRunOnStartup.Checked = runOnStartup;
+                    checkRunOnStartup.CheckedChanged += (_, _) => SetRunOnStartup(checkRunOnStartup.Checked);
+
                     LoadCurrentHardwarePowerMode();
                 }));
 
@@ -219,7 +215,7 @@ namespace PreySense
                                 {
                                     DialogResult result = Dialogs.ConfirmDialog.Show(
                                         this,
-                                        $"A new version ({latestTag}) of Prey Sense is available.\n\n" +
+                                        $"Version {latestTag} of Prey Sense is available.\n\n" +
                                         "Would you like to open the GitHub repository to download it?",
                                         "Prey Sense - Update Available",
                                         "Download",

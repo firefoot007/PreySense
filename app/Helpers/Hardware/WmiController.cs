@@ -13,6 +13,7 @@ namespace PreySense.Helpers
     [SupportedOSPlatform("windows")]
     public class WmiController : IDisposable
     {
+
         private ManagementObject? _cachedObj;
         private ManagementObject? _cachedApgeObj;
         private ManagementObject? _cachedBatteryObj;
@@ -30,6 +31,10 @@ namespace PreySense.Helpers
         private byte _speed = 5;       
         private byte _direction = 1;   
         private int _lastMode = 0;     
+        private int _lastSetFanMode = -1;
+        private int _lastSetCpuSpeed = -1;
+        private int _lastSetGpuSpeed = -1;
+        private long _lastSetFanTick = 0;
         private Color[] _zoneColors = new Color[4] { 
             Color.FromArgb(0, 150, 255), 
             Color.FromArgb(0, 150, 255), 
@@ -46,7 +51,7 @@ namespace PreySense.Helpers
         public int LastRgbMode => _lastMode;
         public Color[] ZoneColors => _zoneColors;
 
-        private ManagementObject? GetWmiObject()
+        public ManagementObject? GetWmiObject()
         {
             lock (_lock)
             {
@@ -91,7 +96,7 @@ namespace PreySense.Helpers
             }
         }
 
-        private void InvalidateCache()
+        public void InvalidateCache()
         {
             lock (_lock)
             {
@@ -177,22 +182,6 @@ namespace PreySense.Helpers
             return false;
         }
 
-        private TelemetryData? _telemetryCache;
-        private DateTime _telemetryFetched = DateTime.MinValue;
-        private static readonly TimeSpan TelemetryCacheTtl = TimeSpan.FromMilliseconds(500);
-
-        private TelemetryData? GetTelemetryCached()
-        {
-            if (!EnsureAcerService()) return null;
-
-            if (DateTime.UtcNow - _telemetryFetched < TelemetryCacheTtl && _telemetryCache != null)
-                return _telemetryCache;
-
-            _telemetryFetched = DateTime.UtcNow;
-            string? json = _serviceClient.GetTelemetryData();
-            _telemetryCache = json != null ? TelemetryData.Parse(json) : null;
-            return _telemetryCache;
-        }
 
         private bool TryParseOperatingMode(string? json, out byte mode)
         {
@@ -264,59 +253,10 @@ namespace PreySense.Helpers
             return mode is 0x00 or 0x01 or 0x04 or 0x05 or 0x06;
         }
 
-        private bool? _acConnectedCache;
-        private DateTime _acStatusFetched = DateTime.MinValue;
-        private static readonly TimeSpan AcStatusCacheTtl = TimeSpan.FromSeconds(2);
-
-        public void InvalidateAcStatusCache()
-        {
-            _acConnectedCache = null;
-            _acStatusFetched = DateTime.MinValue;
-        }
-
-        /// <summary>True when on AC adapter. Uses AcerService AC_STATUS when available.</summary>
         public bool TryGetAcConnected(out bool onAc)
         {
-            onAc = false;
-            if (_acConnectedCache.HasValue && DateTime.UtcNow - _acStatusFetched < AcStatusCacheTtl)
-            {
-                onAc = _acConnectedCache.Value;
-                return true;
-            }
-
-            if (!EnsureAcerService()) return false;
-
-            string? json = _serviceClient.QueryUpdatedData(AcerWmi.Service.AcStatus, log: false);
-            if (string.IsNullOrEmpty(json)) return false;
-
-            var status = Regex.Match(json, @"""status""\s*:\s*(\d+)");
-            if (status.Success)
-            {
-                onAc = status.Groups[1].Value != "0";
-                _acConnectedCache = onAc;
-                _acStatusFetched = DateTime.UtcNow;
-                return true;
-            }
-
-            var connected = Regex.Match(json, @"""connected""\s*:\s*(\d+)");
-            if (connected.Success)
-            {
-                onAc = connected.Groups[1].Value != "0";
-                _acConnectedCache = onAc;
-                _acStatusFetched = DateTime.UtcNow;
-                return true;
-            }
-
-            var result = Regex.Match(json, @"""result""\s*:\s*""?(\d+)""?");
-            if (result.Success)
-            {
-                onAc = result.Groups[1].Value != "0";
-                _acConnectedCache = onAc;
-                _acStatusFetched = DateTime.UtcNow;
-                return true;
-            }
-
-            return false;
+            onAc = System.Windows.Forms.SystemInformation.PowerStatus.PowerLineStatus == System.Windows.Forms.PowerLineStatus.Online;
+            return true;
         }
 
         public void SetRgbMode(int mode, byte r, byte g, byte b, byte brightness, byte speed, byte direction)
@@ -339,6 +279,21 @@ namespace PreySense.Helpers
             if (colors != null && colors.Length >= 4)
                 _zoneColors = colors;
         }
+
+        public void ApplyRgbState()
+        {
+            if (_lastMode == 0)
+            {
+                ApplyZoneLighting();
+            }
+            else
+            {
+                ApplyLightingMode(_lastMode);
+            }
+        }
+
+
+
 
         public void SetBrightness(byte brightness)
         {
@@ -458,25 +413,9 @@ namespace PreySense.Helpers
             }
         }
 
-        private bool _acerServiceBroken = false;
 
         public bool SetPowerMode(byte mode)
         {
-            if (!_acerServiceBroken && EnsureAcerService() && _serviceClient.SetOperatingMode(mode))
-            {
-                // AcerService can report the previous mode for a brief moment after a successful set.
-                for (int attempt = 0; attempt < 5; attempt++)
-                {
-                    if (TryGetPowerProfileAcerService(out byte appliedMode) && appliedMode == mode)
-                    {
-                        SyncWindowsPowerMode(mode);
-                        return true;
-                    }
-
-                    Thread.Sleep(120);
-                }
-            }
-
             var (success, _) = SendCommand(AcerWmi.GamingMethods.SetMiscSetting, (ulong)0x0B | ((ulong)mode << 8));
             if (success)
             {
@@ -497,9 +436,6 @@ namespace PreySense.Helpers
 
         public byte GetPowerProfile()
         {
-            if (!_acerServiceBroken && TryGetPowerProfileAcerService(out byte serviceMode))
-                return serviceMode;
-
             if (TryGetPowerProfileWmi(out byte wmiMode))
                 return wmiMode;
 
@@ -508,28 +444,10 @@ namespace PreySense.Helpers
 
         public bool TryGetPowerProfile(out byte mode)
         {
-            if (!_acerServiceBroken && TryGetPowerProfileAcerService(out mode))
-                return true;
-
             if (TryGetPowerProfileWmi(out mode))
                 return true;
 
             mode = 0;
-            return false;
-        }
-
-        public bool TryGetPowerProfileAcerService(out byte mode)
-        {
-            mode = 0;
-            if (_acerServiceBroken || !EnsureAcerService())
-                return false;
-
-            string? json = _serviceClient.QueryUpdatedData(AcerWmi.Service.OperatingMode);
-            if (TryParseOperatingMode(json, out mode))
-                return true;
-
-            AppLogger.Log($"TryGetPowerProfileAcerService: invalid OPERATING_MODE response: {json ?? "null"}. Marking service as broken.");
-            _acerServiceBroken = true;
             return false;
         }
 
@@ -602,6 +520,11 @@ namespace PreySense.Helpers
             }
         }
 
+        public static int ScalePercentToWmi(int percent)
+        {
+            return Math.Clamp(percent, 10, 100);
+        }
+
         public void SetCpuFanSpeed(int percent)
         {
             lock (_lock)
@@ -611,12 +534,14 @@ namespace PreySense.Helpers
                     var obj = GetWmiObject();
                     if (obj == null) return;
                     using var inParams = obj.GetMethodParameters(AcerWmi.GamingMethods.SetFanSpeed);
-                    ulong val = (ulong)(((percent * 25600) / 100) & 0xFF00) + 1;
+                    int wmiPercent = ScalePercentToWmi(percent);
+                    ulong val = (ulong)(((wmiPercent * 25600) / 100) & 0xFF00) + 1;
                     inParams["gmInput"] = val;
                     obj.InvokeMethod(AcerWmi.GamingMethods.SetFanSpeed, inParams, null);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    AppLogger.Log($"[FanControl] CPU SetFanSpeed Exception: {ex.Message}");
                     InvalidateCache();
                 }
             }
@@ -631,12 +556,14 @@ namespace PreySense.Helpers
                     var obj = GetWmiObject();
                     if (obj == null) return;
                     using var inParams = obj.GetMethodParameters(AcerWmi.GamingMethods.SetFanSpeed);
-                    ulong val = (ulong)(((percent * 25600) / 100) & 0xFF00) + 4;
+                    int wmiPercent = ScalePercentToWmi(percent);
+                    ulong val = (ulong)(((wmiPercent * 25600) / 100) & 0xFF00) + 4;
                     inParams["gmInput"] = val;
                     obj.InvokeMethod(AcerWmi.GamingMethods.SetFanSpeed, inParams, null);
                 }
-                catch
+                catch (Exception ex)
                 {
+                    AppLogger.Log($"[FanControl] GPU SetFanSpeed Exception: {ex.Message}");
                     InvalidateCache();
                 }
             }
@@ -644,9 +571,34 @@ namespace PreySense.Helpers
 
         public bool SetFanControlWmi(int mode, int cpuSpeed = 50, int gpuSpeed = 50)
         {
+            long now = Environment.TickCount64;
+            bool force = (mode != _lastSetFanMode);
+            
+            if (mode == 2 && !force)
+            {
+                if (cpuSpeed == _lastSetCpuSpeed && gpuSpeed == _lastSetGpuSpeed && (now - _lastSetFanTick < 1000))
+                {
+                    return true; // Identical speeds, skip writing unless 1 second passed (watchdog keep-alive)
+                }
+
+                int diffCpu = Math.Abs(cpuSpeed - _lastSetCpuSpeed);
+                int diffGpu = Math.Abs(gpuSpeed - _lastSetGpuSpeed);
+                
+                // If the speed difference is tiny (<= 2%) and it's been less than 5 seconds, skip to avoid WMI spam
+                if (diffCpu <= 2 && diffGpu <= 2 && (now - _lastSetFanTick < 5000))
+                {
+                    return true;
+                }
+            }
+            else if (mode == _lastSetFanMode && mode != 2)
+            {
+                return true; // No mode change, not custom mode, skip
+            }
+
             bool success = SetFanBehavior((byte)mode);
             if (!success)
             {
+                AppLogger.Log($"[FanControl] SetFanBehavior failed for mode={mode}");
                 return false;
             }
 
@@ -656,48 +608,19 @@ namespace PreySense.Helpers
                 SetGpuFanSpeed(Math.Clamp(gpuSpeed, 0, 100));
             }
 
+            _lastSetFanMode = mode;
+            _lastSetCpuSpeed = cpuSpeed;
+            _lastSetGpuSpeed = gpuSpeed;
+            _lastSetFanTick = now;
             return true;
         }
 
-        public int CpuTemp
-        {
-            get
-            {
-                var t = GetTelemetryCached();
-                if (t != null && t.CpuTemp > 0) return t.CpuTemp;
-                return GetSensorReading(AcerWmi.Sensors.CpuTemperature);
-            }
-        }
+        private static int RoundToNearest100(int value) => (int)(Math.Round(value / 100.0) * 100);
 
-        public int GpuTemp
-        {
-            get
-            {
-                var t = GetTelemetryCached();
-                if (t != null && t.GpuTemp > 0) return t.GpuTemp;
-                return GetSensorReading(AcerWmi.Sensors.GpuTemperature);
-            }
-        }
-
-        public int CpuFanRpm
-        {
-            get
-            {
-                var t = GetTelemetryCached();
-                if (t != null && t.CpuFanSpeed > 0) return t.CpuFanSpeed;
-                return GetSensorReading(AcerWmi.Sensors.CpuFanRpm);
-            }
-        }
-
-        public int GpuFanRpm
-        {
-            get
-            {
-                var t = GetTelemetryCached();
-                if (t != null && t.GpuFanSpeed > 0) return t.GpuFanSpeed;
-                return GetSensorReading(AcerWmi.Sensors.GpuFanRpm);
-            }
-        }
+        public int CpuTemp => GetSensorReading(AcerWmi.Sensors.CpuTemperature);
+        public int GpuTemp => GetSensorReading(AcerWmi.Sensors.GpuTemperature);
+        public int CpuFanRpm => RoundToNearest100(GetSensorReading(AcerWmi.Sensors.CpuFanRpm));
+        public int GpuFanRpm => RoundToNearest100(GetSensorReading(AcerWmi.Sensors.GpuFanRpm));
 
         public void ApplyOverlayScheme(int modeIndex)
         {
@@ -772,13 +695,7 @@ namespace PreySense.Helpers
             }
         }
 
-        public bool GetBootAnimation()
-        {
-            var (_, output) = SendCommand(AcerWmi.GamingMethods.GetMiscSetting, 0x06ul);
-            return output == 0x100;
-        }
 
-        public void SetBootAnimation(bool enabled) => SetBootSound(enabled);
 
         public bool GetLedTimeout()
         {
@@ -874,84 +791,18 @@ namespace PreySense.Helpers
 
         public void SetLcdOverdrive(bool enable)
         {
-            if (EnsureAcerService() && _serviceClient.SetLcdOverdrive(enable))
+            if (enable && DisplayManager.IsOledScreen())
             {
+                AppLogger.Log("WmiController: OLED monitor detected. Skipping LCD overdrive enable under the hood.");
                 return;
             }
-
             SendCommand(AcerWmi.GamingMethods.SetProfile, enable ? 0x1000000000010ul : 0x10ul);
-        }
-
-        public void SetScreenBrightness(byte brightness)
-        {
-            try
-            {
-                using var searcher = new ManagementClass(AcerWmi.Namespace, AcerWmi.Classes.MonitorBrightnessMethods, null);
-                using var instances = searcher.GetInstances();
-                foreach (ManagementObject instance in instances.Cast<ManagementObject>())
-                {
-                    instance.InvokeMethod("WmiSetBrightness", new object[] { uint.MaxValue, brightness });
-                }
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Log($"SetScreenBrightness FAILED: {ex.Message}");
-            }
-        }
-
-        public byte GetScreenBrightness()
-        {
-            try
-            {
-                using var searcher = new ManagementObjectSearcher(AcerWmi.Namespace, $"SELECT CurrentBrightness FROM {AcerWmi.Classes.MonitorBrightness}");
-                using var collection = searcher.Get();
-                foreach (ManagementObject obj in collection.Cast<ManagementObject>())
-                {
-                    return (byte)obj["CurrentBrightness"];
-                }
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Log($"GetScreenBrightness FAILED: {ex.Message}");
-            }
-            return 100; // Default fallback
-        }
-
-        public int GetUsbCharging()
-        {
-            ulong status = SendApgeCommand(AcerWmi.ApgeMethods.GetFunction, 0x4ul);
-            if ((status & 4096) != 0)
-            {
-                return 0;
-            }
-            else
-            {
-                ulong percent = ((status >> 17) & 0x6Ful) * 2;
-                return (int)percent;
-            }
-        }
-
-        public void SetUsbCharging(int minBattery)
-        {
-            ulong val = minBattery switch
-            {
-                10 => 659204ul,
-                20 => 1314564ul,
-                30 => 1969924ul,
-                _ => 663300ul
-            };
-            SendApgeCommand(AcerWmi.ApgeMethods.SetFunction, val);
         }
 
         #region AcerService-first (WMI fallback where noted)
 
         public bool SetFanControl(int mode, int cpuSpeed = 50, int gpuSpeed = 50)
         {
-            if (EnsureAcerService() && _serviceClient.SetFanControl(mode, cpuSpeed, gpuSpeed))
-            {
-                return true;
-            }
-
             return SetFanControlWmi(mode, cpuSpeed, gpuSpeed);
         }
 
@@ -977,14 +828,17 @@ namespace PreySense.Helpers
                 return true;
             }
 
-            RefreshAcerService();
-
-            if (_serviceClient.IsAvailable && _serviceClient.SetGpuMode(mode))
+            if (EnsureAcerService())
             {
-                return true;
+                bool serviceOk = _serviceClient.SetGpuMode(mode);
+                if (serviceOk)
+                {
+                    AppLogger.Log($"SetGpuMuxMode: successfully set GPU mode to {mode} via AcerService.");
+                    return true;
+                }
+                AppLogger.Log("SetGpuMuxMode: AcerService call failed, falling back to WMI/BIOS offset.");
             }
 
-            AppLogger.Log($"SetGpuMuxMode: AcerService set failed or unavailable (mode={mode}). Trying direct WMI BIOS offset fallback.");
             return TrySetGpuMuxModeWmi(mode);
         }
 
@@ -992,9 +846,6 @@ namespace PreySense.Helpers
         {
             try
             {
-                // Map AcerService MUX values (1 = discrete, 2 = hybrid) to BIOS offset 80 values:
-                // AcerService mode 1 (Discrete) -> BIOS value 3 (Discrete GPU Only / dGPU)
-                // AcerService mode 2 (Hybrid) -> BIOS value 2 (Optimus / Hybrid)
                 byte biosVal = mode switch
                 {
                     1 => 3, // Discrete
@@ -1042,10 +893,8 @@ namespace PreySense.Helpers
                     return false;
                 }
 
-                // Update GPU mode at offset 80
                 data[80] = biosVal;
 
-                // Write it back
                 using var setParams = biosObj.GetMethodParameters("SetBiosOptions");
                 setParams["PasswordLen"] = (ushort)0;
                 setParams["Password"] = pwBytes;
@@ -1079,43 +928,6 @@ namespace PreySense.Helpers
                 return false;
             }
         }
-
-        public bool SetSoundMode(int mode)
-        {
-            if (!EnsureAcerService()) return false;
-            return _serviceClient.SetSoundMode(mode);
-        }
-
-        public bool SetWinKeyLock(bool locked)
-        {
-            if (!EnsureAcerService()) return false;
-            return _serviceClient.SetWinKeyLock(locked);
-        }
-
-        public bool SetStickyKeys(bool enabled)
-        {
-            if (!EnsureAcerService()) return false;
-            return _serviceClient.SetStickyKeys(enabled);
-        }
-
-        public bool SetBootSound(bool enabled)
-        {
-            if (EnsureAcerService() && _serviceClient.SetBootSound(enabled))
-            {
-                return true;
-            }
-
-            var (success, _) = SendCommand(AcerWmi.GamingMethods.SetMiscSetting, enabled ? 0x106ul : 0x06ul);
-            return success;
-        }
-
-        public bool SetPanelDfrMode(int mode)
-        {
-            if (!EnsureAcerService()) return false;
-            return _serviceClient.SetPanelDfrMode(mode);
-        }
-
-        public TelemetryData? GetRichTelemetry() => GetTelemetryCached();
 
         #endregion
 

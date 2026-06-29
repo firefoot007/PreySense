@@ -41,6 +41,16 @@ namespace PreySense.Fan
                 }
             };
 
+            comboCpuBoost.SelectedIndexChanged += (_, _) =>
+            {
+                if (_currentProfile != null && !_isUpdatingUi)
+                {
+                    _currentProfile.CpuBoost = comboCpuBoost.SelectedIndex;
+                    ProfileManager.SaveProfile(_currentProfile);
+                    PowerLimitController.SetCpuBoost(comboCpuBoost.SelectedIndex);
+                }
+            };
+
             trackPl1.Scroll += (_, _) =>
             {
                 if (_isUpdatingUi) return;
@@ -72,6 +82,17 @@ namespace PreySense.Fan
             checkApplyFanCurves.CheckedChanged += (_, _) =>
             {
                 if (_isUpdatingUi) return;
+                _isUpdatingUi = true;
+                try
+                {
+                    if (checkApplyFanCurves.Checked && checkMaxFans.Checked)
+                    {
+                        checkMaxFans.Checked = false;
+                        _mainForm.ToggleMaxFans(false);
+                    }
+                }
+                finally { _isUpdatingUi = false; }
+
                 if (_currentProfile != null)
                 {
                     _currentProfile.ApplyFanCurve = checkApplyFanCurves.Checked;
@@ -79,6 +100,30 @@ namespace PreySense.Fan
                 }
                 if (_editingMode == _activeMode)
                     _mainForm.ApplyFanCurvesForMode(_activeMode);
+
+                UpdateFanControlsEnabledState();
+            };
+
+            checkMaxFans.CheckedChanged += (_, _) =>
+            {
+                if (_isUpdatingUi) return;
+                _isUpdatingUi = true;
+                try
+                {
+                    if (checkMaxFans.Checked && checkApplyFanCurves.Checked)
+                    {
+                        checkApplyFanCurves.Checked = false;
+                        if (_currentProfile != null)
+                        {
+                            _currentProfile.ApplyFanCurve = false;
+                            ProfileManager.SaveProfile(_currentProfile);
+                        }
+                    }
+                }
+                finally { _isUpdatingUi = false; }
+
+                _mainForm.ToggleMaxFans(checkMaxFans.Checked);
+                UpdateFanControlsEnabledState();
             };
 
             numFanRampUp.ValueChanged += (_, _) =>
@@ -111,6 +156,10 @@ namespace PreySense.Fan
             buttonGPU.Activated = tabIndex == 1;
             panelCpuLimitsSection.Visible = tabIndex == 0;
             panelGpuOffsetsSection.Visible = tabIndex == 1;
+            if (_powerModeHost != null)
+            {
+                _powerModeHost.Visible = tabIndex == 0;
+            }
             ShowCurveForMode(tabIndex == 1);
 
             if (_buttonApplySettings != null)
@@ -120,14 +169,21 @@ namespace PreySense.Fan
             }
         }
 
-        private void CommitGpuSettings()
+        private void CommitGpuSettings(int delayMs = 0)
         {
             checkApplyGpuLimits.Checked = true;
             if (_editingMode == _activeMode && _mainForm.GpuMode != 0)
             {
                 int coreOffset = trackGpuCoreOffset.Value;
                 int memoryOffset = trackGpuMemoryOffset.Value;
-                Task.Run(() => NvidiaWrapper.ApplyGpuSettings(coreOffset, memoryOffset));
+                Task.Run(async () =>
+                {
+                    if (delayMs > 0)
+                    {
+                        await Task.Delay(delayMs);
+                    }
+                    NvidiaWrapper.ApplyGpuSettings(coreOffset, memoryOffset);
+                });
             }
             else if (_editingMode == _activeMode && _mainForm.GpuMode == 0)
             {
@@ -135,14 +191,21 @@ namespace PreySense.Fan
             }
         }
 
-        private void ApplyCpuPowerLimits()
+        private void ApplyCpuPowerLimits(int delayMs = 0)
         {
             checkApplyCpuLimits.Checked = true;
             if (_editingMode == _activeMode)
             {
                 int pl1 = trackPl1.Value;
                 int pl2 = trackPl2.Value;
-                Task.Run(() => PowerLimitController.SetCpuPowerLimits(pl1, pl2, pl2Enable: true));
+                Task.Run(async () =>
+                {
+                    if (delayMs > 0)
+                    {
+                        await Task.Delay(delayMs);
+                    }
+                    PowerLimitController.SetCpuPowerLimits(pl1, pl2, pl2Enable: true);
+                });
             }
         }
 
@@ -205,6 +268,7 @@ namespace PreySense.Fan
             numPl1.Value = trackPl1.Value;
             numPl2.Value = trackPl2.Value;
             comboWindowsPowerMode.SelectedIndex = Math.Clamp(_currentProfile.WindowsPowerMode, 0, 2);
+            comboCpuBoost.SelectedIndex = Math.Clamp(_currentProfile.CpuBoost, 0, 6);
             checkApplyCpuLimits.Checked = _currentProfile.ApplyCpuLimits;
             trackGpuCoreOffset.Value = Math.Clamp(_currentProfile.GpuCoreOffset, trackGpuCoreOffset.Minimum, trackGpuCoreOffset.Maximum);
             trackGpuMemoryOffset.Value = Math.Clamp(_currentProfile.GpuMemoryOffset, trackGpuMemoryOffset.Minimum, trackGpuMemoryOffset.Maximum);
@@ -217,16 +281,41 @@ namespace PreySense.Fan
             _gpuCurve = FanCurveStorage.LoadGpuCurve(mode);
             _curveCpu.Points = _cpuCurve;
             _curveGpu.Points = _gpuCurve;
+
+            bool fanControlAllowed = (mode != 0x00 && mode != 0x06);
+            checkApplyFanCurves.Enabled = fanControlAllowed;
+            if (!fanControlAllowed && _currentProfile.ApplyFanCurve)
+            {
+                _currentProfile.ApplyFanCurve = false;
+                ProfileManager.SaveProfile(_currentProfile);
+            }
+
             checkApplyFanCurves.Checked = _currentProfile.ApplyFanCurve;
+
+            bool maxFansAllowed = (mode != 0x00 && mode != 0x06);
+            checkMaxFans.Enabled = maxFansAllowed;
+            if (!maxFansAllowed && _mainForm.MaxFanEnabled)
+            {
+                _mainForm.ToggleMaxFans(false);
+            }
+
+            checkMaxFans.Checked = _mainForm.MaxFanEnabled;
             numFanRampUp.Value = Math.Clamp(_currentProfile.FanRampUp, numFanRampUp.Minimum, numFanRampUp.Maximum);
             EnforcePowerLimitOrder(pl1IsDriver: false);
             _isUpdatingUi = false;
             UpdateGpuOverclockAvailability();
+            UpdateFanControlsEnabledState();
         }
 
-        private void UpdateGpuOverclockAvailability()
+        public void UpdateGpuOverclockAvailability()
         {
-            const bool allowed = true;
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(UpdateGpuOverclockAvailability));
+                return;
+            }
+
+            bool allowed = _mainForm.GpuMode != 0;
             trackGpuCoreOffset.Enabled = allowed;
             trackGpuMemoryOffset.Enabled = allowed;
             numGpuCoreOffset.Enabled = allowed;
@@ -236,11 +325,18 @@ namespace PreySense.Fan
             labelGpuMemoryTitle.Enabled = true;
             labelGpuCoreValue.Enabled = true;
             labelGpuMemoryValue.Enabled = true;
-            labelGpuOffsets.ForeColor = foreMain;
-            labelGpuCoreTitle.ForeColor = foreMain;
-            labelGpuMemoryTitle.ForeColor = foreMain;
-            labelGpuCoreValue.ForeColor = foreMain;
-            labelGpuMemoryValue.ForeColor = foreMain;
+
+            Color textColor = allowed ? foreMain : Color.FromArgb(120, 120, 120);
+            labelGpuOffsets.ForeColor = textColor;
+            labelGpuCoreTitle.ForeColor = textColor;
+            labelGpuMemoryTitle.ForeColor = textColor;
+            labelGpuCoreValue.ForeColor = textColor;
+            labelGpuMemoryValue.ForeColor = textColor;
+
+            if (_buttonApplySettings != null)
+            {
+                _buttonApplySettings.Enabled = !buttonGPU.Activated || allowed;
+            }
         }
 
         private void ResetDefaults()
@@ -263,8 +359,11 @@ namespace PreySense.Fan
             numPl1.Value = trackPl1.Value;
             numPl2.Value = trackPl2.Value;
             comboWindowsPowerMode.SelectedIndex = Math.Clamp(_currentProfile.WindowsPowerMode, 0, 2);
+            comboCpuBoost.SelectedIndex = Math.Clamp(_currentProfile.CpuBoost, 0, 6);
             checkApplyCpuLimits.Checked = _currentProfile.ApplyCpuLimits;
             checkApplyFanCurves.Checked = _currentProfile.ApplyFanCurve;
+            _mainForm.ToggleMaxFans(false);
+            checkMaxFans.Checked = false;
             numFanRampUp.Value = Math.Clamp(_currentProfile.FanRampUp, numFanRampUp.Minimum, numFanRampUp.Maximum);
             trackGpuCoreOffset.Value = Math.Clamp(_currentProfile.GpuCoreOffset, trackGpuCoreOffset.Minimum, trackGpuCoreOffset.Maximum);
             trackGpuMemoryOffset.Value = Math.Clamp(_currentProfile.GpuMemoryOffset, trackGpuMemoryOffset.Minimum, trackGpuMemoryOffset.Maximum);
@@ -279,8 +378,8 @@ namespace PreySense.Fan
             {
                 _mainForm.SetActiveFanCurves(_cpuCurve, _gpuCurve);
                 _mainForm.ApplyFanCurvesForMode(_activeMode);
-                ApplyCpuPowerLimits();
-                CommitGpuSettings();
+                ApplyCpuPowerLimits(3000);
+                CommitGpuSettings(3000);
             }
         }
 
@@ -314,6 +413,7 @@ namespace PreySense.Fan
                 _currentProfile.CpuPl1 = trackPl1.Value;
                 _currentProfile.CpuPl2 = trackPl2.Value;
                 _currentProfile.WindowsPowerMode = comboWindowsPowerMode.SelectedIndex;
+                _currentProfile.CpuBoost = comboCpuBoost.SelectedIndex;
                 _currentProfile.ApplyCpuLimits = checkApplyCpuLimits.Checked;
                 ProfileManager.SaveProfile(_currentProfile);
             }
@@ -323,6 +423,7 @@ namespace PreySense.Fan
                 key.SetValue("PWR_SPL", trackPl1.Value);
                 key.SetValue("PWR_SPPT", trackPl2.Value);
                 key.SetValue("WindowsPowerMode", comboWindowsPowerMode.SelectedIndex);
+                key.SetValue("CpuBoost", comboCpuBoost.SelectedIndex);
                 key.SetValue("Power_Apply", checkApplyCpuLimits.Checked ? 1 : 0);
             }
             catch { }
@@ -429,6 +530,17 @@ namespace PreySense.Fan
             base.OnFormClosing(e);
             _telemetryTimer?.Stop();
             _telemetryTimer?.Dispose();
+        }
+
+        private void UpdateFanControlsEnabledState()
+        {
+            bool isSilentOrEco = (_editingMode == 0x00 || _editingMode == 0x06);
+            bool allowed = !isSilentOrEco;
+
+            _curveCpu.Enabled = allowed;
+            _curveGpu.Enabled = allowed;
+            numFanRampUp.Enabled = allowed;
+            labelFanRampUp.ForeColor = allowed ? UI.RForm.foreMain : Color.FromArgb(120, 120, 120);
         }
     }
 }

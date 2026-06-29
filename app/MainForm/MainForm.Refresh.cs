@@ -90,17 +90,22 @@ namespace PreySense
             if (!force && _lastAppliedGammaRefreshRate == hz)
                 return;
 
-            try
+            _lastAppliedGammaRefreshRate = hz;
+
+            Task.Run(async () =>
             {
-                AppLogger.Log($"Applying color profile for refresh rate {hz}Hz");
-                var profile = DisplayManager.LoadProfile(hz);
-                DisplayManager.ApplyProfile(profile);
-                _lastAppliedGammaRefreshRate = hz;
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Log($"Error applying color profile for refresh rate: {ex.Message}");
-            }
+                try
+                {
+                    await Task.Delay(100);
+                    AppLogger.Log($"Applying color profile for refresh rate {hz}Hz");
+                    var profile = DisplayManager.LoadProfile(hz);
+                    DisplayManager.ApplyProfile(profile);
+                }
+                catch (Exception ex)
+                {
+                    AppLogger.Log($"Error applying color profile for refresh rate: {ex.Message}");
+                }
+            });
         }
 
         public void ConfigureRefreshRateButtons()

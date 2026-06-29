@@ -34,6 +34,7 @@ namespace PreySense.UI
             set
             {
                 borderColor = value;
+                Invalidate();
             }
         }
 

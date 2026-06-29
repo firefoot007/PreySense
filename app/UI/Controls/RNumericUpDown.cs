@@ -20,7 +20,13 @@ namespace PreySense.UI
             string theme = dark ? "DarkMode_Explorer" : "Explorer";
             SetWindowTheme(Handle, theme, null);
             foreach (Control child in Controls)
+            {
+                if (dark && child.GetType().Name == "UpDownButtons")
+                {
+                    child.BackColor = Color.Black;
+                }
                 SetWindowTheme(child.Handle, theme, null);
+            }
         }
     }
 }

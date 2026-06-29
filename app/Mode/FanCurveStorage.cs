@@ -87,5 +87,55 @@ namespace PreySense.Mode
                 return null;
             }
         }
+
+        public static int LoadCpuMinWmiFloor()
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(LegacyBase);
+                if (key != null)
+                {
+                    object? val = key.GetValue("CpuMinWmiFloor");
+                    if (val != null) return Convert.ToInt32(val);
+                }
+            }
+            catch { }
+            return 15; // default minimum
+        }
+
+        public static int LoadGpuMinWmiFloor()
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(LegacyBase);
+                if (key != null)
+                {
+                    object? val = key.GetValue("GpuMinWmiFloor");
+                    if (val != null) return Convert.ToInt32(val);
+                }
+            }
+            catch { }
+            return 15; // default minimum
+        }
+
+        public static void SaveCpuMinWmiFloor(int value)
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.CreateSubKey(LegacyBase);
+                key?.SetValue("CpuMinWmiFloor", value);
+            }
+            catch { }
+        }
+
+        public static void SaveGpuMinWmiFloor(int value)
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.CreateSubKey(LegacyBase);
+                key?.SetValue("GpuMinWmiFloor", value);
+            }
+            catch { }
+        }
     }
 }

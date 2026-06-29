@@ -113,6 +113,7 @@ namespace PreySense
 
                 byte brightness = GetBrightnessSliderValue();
                 _wmi.SetCachedRgbState(rgbMode, (byte)r, (byte)g, (byte)b, brightness, (byte)rgbSpeed, direction, colors);
+                Task.Run(() => _wmi.ApplyRgbState());
             }
             finally
             {
@@ -147,7 +148,7 @@ namespace PreySense
             _fanRampUp = _applyCustomFans ? profile.FanRampUp : 1;
             _maxFanEnabled = GetRegistryInt(key, "Fan_MaxSpeed", 0) == 1;
             buttonTurboFanModePower.Activated = _applyCustomFans;
-            buttonTurboFanModePower.BorderColor = _applyCustomFans ? PreySense.UI.RForm.colorCustom : Color.Transparent;
+            buttonTurboFanModePower.BorderColor = _applyCustomFans ? PreySense.UI.RForm.colorCustom : borderSecond;
         }
 
         private static int GetRegistryInt(RegistryKey? key, string name, int defaultValue)
@@ -162,6 +163,15 @@ namespace PreySense
 
         private void ApplyPowerMode(byte mode, bool persistHardware)
         {
+            if (persistHardware)
+            {
+                if ((DateTime.Now - _lastModeChangeTime).TotalSeconds < 2.0)
+                {
+                    return;
+                }
+                _lastModeChangeTime = DateTime.Now;
+            }
+
             if (persistHardware && IsKnownPowerMode(_lastKnownProfile) && mode == _lastKnownProfile)
                 return;
 
@@ -209,7 +219,7 @@ namespace PreySense
 
             // Run the blocking WMI poll and profile apply off the UI thread so the
             // button outline repaints immediately without waiting up to ~600 ms.
-            _ = Task.Run(() =>
+            _ = Task.Run(async () =>
             {
                 bool applied = _wmi.SetPowerMode(mode);
                 if (!applied)
@@ -230,7 +240,7 @@ namespace PreySense
 
                 try
                 {
-                    PreySense.Mode.ProfileManager.ApplyProfile(modeName, _wmi);
+                    await PreySense.Mode.ProfileManager.ApplyProfileAsync(modeName, _wmi);
                 }
                 catch (Exception ex)
                 {
@@ -386,7 +396,6 @@ namespace PreySense
         {
             if (e.Mode == PowerModes.StatusChange)
             {
-                _wmi.InvalidateAcStatusCache();
                 if (this.InvokeRequired)
                 {
                     this.BeginInvoke(new Action(CheckPowerSourceTransition));
@@ -427,6 +436,8 @@ namespace PreySense
             };
             labelGpuMode.Text = labelText;
             labelGpuHint.Text = "";
+
+            fansForm?.UpdateGpuOverclockAvailability();
         }
 
         private void ApplyHardwareGpuTransition(int mode)
@@ -441,16 +452,14 @@ namespace PreySense
                 NvidiaWrapper.SetGpuMode(0);
                 NvidiaGpuControl.StopNVService();
                 DeviceHelper.SetDeviceState("VEN_10DE", false);
-                _wmi.SetGpuMuxMode(WmiController.GpuMuxHybrid);
             }
             else if (mode == 1)
             {
                 DeviceHelper.SetDeviceState("VEN_10DE", true);
                 NvidiaGpuControl.RestartNVService();
-                _wmi.SetGpuMuxMode(WmiController.GpuMuxHybrid);
                 NvidiaWrapper.SetGpuMode(1);
 
-                System.Threading.Thread.Sleep(2000); // Let NV service fully restart before writing settings.
+                System.Threading.Thread.Sleep(2500); // Let NV service fully restart before writing settings.
 
                 // Re-apply GPU overclock for the active performance profile now that the dGPU is back.
                 var profile = PreySense.Mode.ProfileManager.LoadProfile(_lastKnownProfile);

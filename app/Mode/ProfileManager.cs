@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Threading.Tasks;
 using Microsoft.Win32;
 using PreySense.Gpu;
 using PreySense.Helpers;
@@ -46,6 +47,7 @@ namespace PreySense.Mode
                 profile.CpuPl1 = Math.Clamp((int)key.GetValue("CpuPl1", profile.CpuPl1), 5, 200);
                 profile.CpuPl2 = Math.Clamp((int)key.GetValue("CpuPl2", profile.CpuPl2), 5, 200);
                 profile.WindowsPowerMode = Math.Clamp((int)key.GetValue("WindowsPowerMode", profile.WindowsPowerMode), 0, 2);
+                profile.CpuBoost = Math.Clamp((int)key.GetValue("CpuBoost", profile.CpuBoost), 0, 6);
 
                 profile.GpuCoreOffset = Math.Clamp((int)key.GetValue("GpuCoreOffset", profile.GpuCoreOffset), -1000, 1000);
                 profile.GpuMemoryOffset = Math.Clamp((int)key.GetValue("GpuMemoryOffset", profile.GpuMemoryOffset), -1000, 3000);
@@ -53,7 +55,7 @@ namespace PreySense.Mode
                 profile.ApplyCpuLimits = (int)key.GetValue("ApplyCpuLimits", 0) == 1;
                 profile.ApplyGpuLimits = (int)key.GetValue("ApplyGpuLimits", 0) == 1;
                 profile.ApplyFanCurve = (int)key.GetValue("ApplyFanCurve", 0) == 1;
-                profile.FanRampUp = (int)key.GetValue("FanRampUp", 1);
+                profile.FanRampUp = Math.Clamp((int)key.GetValue("FanRampUp", 1), 0, 5);
             }
             catch { }
 
@@ -79,6 +81,7 @@ namespace PreySense.Mode
                 key.SetValue("CpuPl1", Math.Clamp(profile.CpuPl1, 5, 200));
                 key.SetValue("CpuPl2", Math.Clamp(profile.CpuPl2, 5, 200));
                 key.SetValue("WindowsPowerMode", profile.WindowsPowerMode);
+                key.SetValue("CpuBoost", profile.CpuBoost);
 
                 key.SetValue("GpuCoreOffset", profile.GpuCoreOffset);
                 key.SetValue("GpuMemoryOffset", profile.GpuMemoryOffset);
@@ -115,6 +118,7 @@ namespace PreySense.Mode
                 key.SetValue("DefaultCpuPl1", Math.Max(5, profile.CpuPl1));
                 key.SetValue("DefaultCpuPl2", Math.Max(5, profile.CpuPl2));
                 key.SetValue("DefaultWindowsPowerMode", Math.Clamp(profile.WindowsPowerMode, 0, 2));
+                key.SetValue("DefaultCpuBoost", Math.Clamp(profile.CpuBoost, 0, 6));
                 key.SetValue("DefaultGpuCoreOffset", profile.GpuCoreOffset);
                 key.SetValue("DefaultGpuMemoryOffset", profile.GpuMemoryOffset);
                 return true;
@@ -136,11 +140,12 @@ namespace PreySense.Mode
                 if (key == null)
                     return;
 
-                foreach (string valueName in new[]
+                 foreach (string valueName in new[]
                 {
                     "CpuPl1",
                     "CpuPl2",
                     "WindowsPowerMode",
+                    "CpuBoost",
                     "GpuCoreOffset",
                     "GpuMemoryOffset",
                     "ApplyCpuLimits",
@@ -191,6 +196,7 @@ namespace PreySense.Mode
                 profile.CpuPl1 = Math.Max(5, (int)key.GetValue("DefaultCpuPl1", profile.CpuPl1));
                 profile.CpuPl2 = Math.Max(5, (int)key.GetValue("DefaultCpuPl2", profile.CpuPl2));
                 profile.WindowsPowerMode = Math.Clamp((int)key.GetValue("DefaultWindowsPowerMode", profile.WindowsPowerMode), 0, 2);
+                profile.CpuBoost = Math.Clamp((int)key.GetValue("DefaultCpuBoost", profile.CpuBoost), 0, 6);
             }
             catch { }
 
@@ -208,7 +214,7 @@ namespace PreySense.Mode
         /// Applies the hardware settings from a profile, respecting the per-category apply flags.
         /// Only applies settings where the corresponding checkbox was enabled.
         /// </summary>
-        public static void ApplyProfile(string modeName, WmiController? wmi = null)
+        public static async Task ApplyProfileAsync(string modeName, WmiController? wmi = null)
         {
             byte mode = modeName switch
             {
@@ -220,14 +226,14 @@ namespace PreySense.Mode
             };
 
             var profile = LoadProfile(mode);
-            ApplyProfile(profile, wmi);
+            await ApplyProfileAsync(profile, wmi);
         }
 
         /// <summary>
         /// Applies the hardware settings from a profile, respecting the per-category apply flags.
         /// Only applies settings where the corresponding checkbox was enabled.
         /// </summary>
-        public static void ApplyProfile(PerformanceProfile profile, WmiController? wmi = null)
+        public static async Task ApplyProfileAsync(PerformanceProfile profile, WmiController? wmi = null)
         {
             AppLogger.Log($"ProfileManager: Applying profile '{profile.Name}' (mode 0x{profile.PowerMode:X2})");
             var factoryDefaults = LoadFactoryDefaultProfile(profile.PowerMode);
@@ -235,10 +241,10 @@ namespace PreySense.Mode
                 profile.CpuPl1 != factoryDefaults.CpuPl1 ||
                 profile.CpuPl2 != factoryDefaults.CpuPl2;
 
-            // Wait a second or two before applying power limit changes to stop EC from immediately overwriting them
+            // Wait three seconds before applying power limit changes to stop EC from immediately overwriting them
             if ((profile.ApplyCpuLimits && cpuLimitsDifferFromFactory) || profile.ApplyGpuLimits)
             {
-                System.Threading.Thread.Sleep(2000);
+                await Task.Delay(2500);
             }
 
             // Apply CPU power limits (only if the user has opted in)
@@ -249,6 +255,9 @@ namespace PreySense.Mode
                     profile.CpuPl1,
                     profile.CpuPl2);
             }
+
+            // Apply CPU boost mode
+            PowerLimitController.SetCpuBoost(profile.CpuBoost);
 
             // Apply GPU offsets only when the profile explicitly enables them.
             if (profile.ApplyGpuLimits && IsDiscreteGpuAvailableForOverclock())

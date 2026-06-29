@@ -102,7 +102,7 @@ namespace PreySense
         private DateTime _lastModeToastTime = DateTime.MinValue;
         private bool _allowExit = false;
         private const int DirectShortcutEchoSuppressMs = 5000;
-        private const int ModeToastDebounceMs = 1000;
+        private const int ModeToastDebounceMs = 2000;
 
         private static readonly string[] RgbModeNames = RgbProfile.UiModeNames;
 
@@ -118,9 +118,18 @@ namespace PreySense
         private int _lastFanCpuPercent = 50;
         private int _lastFanGpuPercent = 50;
         private bool _maxFanEnabled = false;
+        public bool MaxFanEnabled => _maxFanEnabled;
         private PointF[] _cpuCurve = Array.Empty<PointF>();
         private PointF[] _gpuCurve = Array.Empty<PointF>();
         private FooterQuickActionsControl _footerQuickActions = null!;
+
+        // Advanced fan control algorithm state
+        private float _filteredCpuTemp = 0f;
+        private float _filteredGpuTemp = 0f;
+        private int _cpuTargetPending = -1;
+        private int _gpuTargetPending = -1;
+        private int _cpuDelayTicks = 0;
+        private int _gpuDelayTicks = 0;
 
         // Colors for active/inactive buttons matching G-Helper style
         private static readonly Color ColorActiveBorder = Color.FromArgb(58, 174, 239);
@@ -150,7 +159,14 @@ namespace PreySense
                 QueueStartupWork();
                 StartDeferredStartupInitialization();
                 _ = Task.Run(CheckForUpdatesAsync);
-                StartFade(true);
+                if (Environment.CommandLine.Contains("-hidden"))
+                {
+                    HideApp();
+                }
+                else
+                {
+                    StartFade(true);
+                }
             };
 
             _isLoaded = true;
@@ -365,7 +381,15 @@ namespace PreySense
             UpdateBatteryLimitButtonFromValue(sliderBatteryChargeLimit.Value);
             buttonBatteryFull.Click += (s, e) => {
                 int nextMode = sliderBatteryChargeLimit.Value == 80 ? 0 : 1;
-                sliderBatteryChargeLimit.Value = nextMode == 1 ? 80 : 100;
+                _isApplyingSavedBatteryLimit = true;
+                try
+                {
+                    sliderBatteryChargeLimit.Value = nextMode == 1 ? 80 : 100;
+                }
+                finally
+                {
+                    _isApplyingSavedBatteryLimit = false;
+                }
                 _pendingBatteryMode = nextMode;
                 ApplyBatteryMode(_pendingBatteryMode);
                 _pendingBatteryMode = -1;
@@ -388,6 +412,13 @@ namespace PreySense
 
             bool isFormVisible = Visible && WindowState != FormWindowState.Minimized;
             bool showBatteryTelemetry = _showBatteryTelemetry;
+
+            if (!isFormVisible && !_applyCustomFans && !_maxFanEnabled)
+            {
+                CheckPowerSourceTransition(IsOnBatteryPower());
+                _isTelemetryUpdating = false;
+                return;
+            }
 
             Task.Run(() =>
             {
@@ -417,27 +448,22 @@ namespace PreySense
                     {
                         if (IsDisposed) return;
 
-                        bool dgpuDisabled = _gpuMode == 0;
-                        labelCpuFanStatus.Text = _cpuTemp > 0 ? $"CPU: {_cpuTemp}°C  {_cpuRpm} RPM" : $"CPU: --°C  {_cpuRpm} RPM";
-                        if (dgpuDisabled)
+                        if (isFormVisible)
                         {
-                            labelGpuModeFan.Text = "";
-                        }
-                        else
-                        {
+                            labelCpuFanStatus.Text = _cpuTemp > 0 ? $"CPU: {_cpuTemp}°C  {_cpuRpm} RPM" : $"CPU: --°C  {_cpuRpm} RPM";
                             labelGpuModeFan.Text = _gpuTemp > 0 ? $"GPU: {_gpuTemp}°C  {_gpuRpm} RPM" : $"GPU: 0°C  {_gpuRpm} RPM";
-                        }
 
-                        _currentRefreshRate = currentHz;
+                            _currentRefreshRate = currentHz;
 
-                        if (showBatteryTelemetry && Visible && WindowState != FormWindowState.Minimized)
-                            RefreshBatteryRateLabel();
+                            if (showBatteryTelemetry)
+                                RefreshBatteryRateLabel();
 
-                        if (_lastRefreshRate != currentHz)
-                        {
-                            _lastRefreshRate = currentHz;
-                            ApplyGammaForRefreshRate(currentHz);
-                            SyncRefreshRateButtons(currentHz, buttonAutoRefreshRate.Activated);
+                            if (_lastRefreshRate != currentHz)
+                            {
+                                _lastRefreshRate = currentHz;
+                                ApplyGammaForRefreshRate(currentHz);
+                                SyncRefreshRateButtons(currentHz, buttonAutoRefreshRate.Activated);
+                            }
                         }
 
                         CheckPowerSourceTransition(onBattery);
@@ -458,10 +484,17 @@ namespace PreySense
         {
             _applyCustomFans = enable;
             buttonTurboFanModePower.Activated = enable;
-            buttonTurboFanModePower.BorderColor = enable ? RForm.colorCustom : Color.Transparent;
+            buttonTurboFanModePower.BorderColor = enable ? RForm.colorCustom : borderSecond;
             SaveState("Fan_CurveEnabled", enable ? 1 : 0);
             if (enable)
             {
+                _filteredCpuTemp = 0f;
+                _filteredGpuTemp = 0f;
+                _cpuTargetPending = -1;
+                _gpuTargetPending = -1;
+                _cpuDelayTicks = 0;
+                _gpuDelayTicks = 0;
+
                 byte mode = _lastKnownProfile != 0 ? _lastKnownProfile : _wmi.GetPowerProfile();
                 _cpuCurve = FanCurveStorage.LoadCpuCurve(mode);
                 _gpuCurve = FanCurveStorage.LoadGpuCurve(mode);
@@ -483,37 +516,19 @@ namespace PreySense
         {
             _wmi.RefreshAcerService();
 
-            int cpu = _lastFanCpuPercent;
-            int gpu = _lastFanGpuPercent;
-            if (_cpuCurve.Length > 0)
+            Task.Run(async () =>
             {
-                float cpuTemp = _cpuTemp > 0 ? _cpuTemp : 40f;
-                cpu = GetSpeedFromCurve(_cpuCurve, cpuTemp);
-            }
-            if (_gpuCurve.Length > 0)
-            {
-                float gpuTemp = _gpuTemp > 0 ? _gpuTemp : 40f;
-                gpu = GetSpeedFromCurve(_gpuCurve, gpuTemp);
-            }
-
-            // EC floor during custom is ~1800 RPM (~0%); auto handoff at 0% stalls fans.
-            cpu = Math.Max(cpu, 20);
-            gpu = Math.Max(gpu, 20);
-
-            _wmi.SetFanControl(0, cpu, gpu);
+                _wmi.SetFanControl(0);
+            });
         }
 
-        /// <summary>
-        /// Pushes the current fan mode to hardware via AcerService TCP (FAN_CONTROL),
-        /// falling back to WMI only when the service socket is unavailable.
-        /// </summary>
         private void ApplyActiveFanControl()
         {
             _wmi.RefreshAcerService();
 
             if (_maxFanEnabled)
             {
-                _wmi.SetFanControl(1);
+                Task.Run(() => _wmi.SetFanControl(1));
                 return;
             }
 
@@ -522,26 +537,106 @@ namespace PreySense
 
             float cpuTemp = _cpuTemp > 0 ? _cpuTemp : 40f;
             float gpuTemp = _gpuTemp > 0 ? _gpuTemp : 40f;
-            int targetCpu = GetSpeedFromCurve(_cpuCurve, cpuTemp);
-            int targetGpu = GetSpeedFromCurve(_gpuCurve, gpuTemp);
 
-            int rampUp = _fanRampUp;
-            if (rampUp > 0)
+            // Exponential Moving Average temperature smoothing (alpha = 0.25)
+            const float alpha = 0.25f;
+            bool isCpuFirst = _filteredCpuTemp == 0f;
+            bool isGpuFirst = _filteredGpuTemp == 0f;
+            _filteredCpuTemp = isCpuFirst ? cpuTemp : (_filteredCpuTemp * (1f - alpha) + cpuTemp * alpha);
+            _filteredGpuTemp = isGpuFirst ? gpuTemp : (_filteredGpuTemp * (1f - alpha) + gpuTemp * alpha);
+
+            int targetCpu = GetSpeedFromCurve(_cpuCurve, _filteredCpuTemp);
+            int targetGpu = GetSpeedFromCurve(_gpuCurve, _filteredGpuTemp);
+
+            if (isCpuFirst) _lastFanCpuPercent = targetCpu;
+            if (isGpuFirst) _lastFanGpuPercent = targetGpu;
+
+            // 2% deadband/hysteresis to avoid continuous minor adjustments
+            if (Math.Abs(targetCpu - _lastFanCpuPercent) < 2)
             {
-                float maxIncrease = 100f / rampUp;
-                if (targetCpu > _lastFanCpuPercent)
+                targetCpu = _lastFanCpuPercent;
+                _cpuTargetPending = -1;
+                _cpuDelayTicks = 0;
+            }
+            if (Math.Abs(targetGpu - _lastFanGpuPercent) < 2)
+            {
+                targetGpu = _lastFanGpuPercent;
+                _gpuTargetPending = -1;
+                _gpuDelayTicks = 0;
+            }
+
+            int T = _fanRampUp; // Ramp up time in seconds (from UI)
+            int rampUpTicks = Math.Max(1, T);          // Minimum 1 second (1 tick) delay
+            int rampDownTicks = Math.Max(5, T * 4);    // Minimum 5 seconds (5 ticks) delay
+
+            // CPU Fan Ramp Logic
+            if (targetCpu > _lastFanCpuPercent)
+            {
+                if (_cpuTargetPending <= _lastFanCpuPercent)
                 {
-                    targetCpu = (int)Math.Min(targetCpu, _lastFanCpuPercent + maxIncrease);
+                    _cpuTargetPending = targetCpu;
+                    _cpuDelayTicks = 0;
                 }
-                if (targetGpu > _lastFanGpuPercent)
+                _cpuDelayTicks++;
+                if (_cpuDelayTicks >= rampUpTicks)
                 {
-                    targetGpu = (int)Math.Min(targetGpu, _lastFanGpuPercent + maxIncrease);
+                    _lastFanCpuPercent = targetCpu;
+                    _cpuTargetPending = -1;
+                    _cpuDelayTicks = 0;
+                }
+            }
+            else if (targetCpu < _lastFanCpuPercent)
+            {
+                if (_cpuTargetPending >= _lastFanCpuPercent)
+                {
+                    _cpuTargetPending = targetCpu;
+                    _cpuDelayTicks = 0;
+                }
+                _cpuDelayTicks++;
+                if (_cpuDelayTicks >= rampDownTicks)
+                {
+                    _lastFanCpuPercent = targetCpu;
+                    _cpuTargetPending = -1;
+                    _cpuDelayTicks = 0;
                 }
             }
 
-            _lastFanCpuPercent = targetCpu;
-            _lastFanGpuPercent = targetGpu;
-            _wmi.SetFanControl(2, targetCpu, targetGpu);
+            // GPU Fan Ramp Logic
+            if (targetGpu > _lastFanGpuPercent)
+            {
+                if (_gpuTargetPending <= _lastFanGpuPercent)
+                {
+                    _gpuTargetPending = targetGpu;
+                    _gpuDelayTicks = 0;
+                }
+                _gpuDelayTicks++;
+                if (_gpuDelayTicks >= rampUpTicks)
+                {
+                    _lastFanGpuPercent = targetGpu;
+                    _gpuTargetPending = -1;
+                    _gpuDelayTicks = 0;
+                }
+            }
+            else if (targetGpu < _lastFanGpuPercent)
+            {
+                if (_gpuTargetPending >= _lastFanGpuPercent)
+                {
+                    _gpuTargetPending = targetGpu;
+                    _gpuDelayTicks = 0;
+                }
+                _gpuDelayTicks++;
+                if (_gpuDelayTicks >= rampDownTicks)
+                {
+                    _lastFanGpuPercent = targetGpu;
+                    _gpuTargetPending = -1;
+                    _gpuDelayTicks = 0;
+                }
+            }
+
+            // Write to WMI in background thread to avoid stutters
+            int cpuSpeed = _lastFanCpuPercent;
+            int gpuSpeed = _lastFanGpuPercent;
+            Task.Run(() => _wmi.SetFanControl(2, cpuSpeed, gpuSpeed));
         }
 
         /// <summary>
@@ -554,21 +649,42 @@ namespace PreySense
             _cpuCurve = FanCurveStorage.LoadCpuCurve(mode);
             _gpuCurve = FanCurveStorage.LoadGpuCurve(mode);
 
-            if (_maxFanEnabled)
-                return;
+            // Reset EMA filters and ramp timers on mode/profile change
+            _filteredCpuTemp = 0f;
+            _filteredGpuTemp = 0f;
+            _cpuTargetPending = -1;
+            _gpuTargetPending = -1;
+            _cpuDelayTicks = 0;
+            _gpuDelayTicks = 0;
 
-            if (profile.ApplyFanCurve)
+            if (_maxFanEnabled)
+            {
+                if (mode == 0x00 || mode == 0x06)
+                {
+                    ToggleMaxFans(false);
+                }
+                else
+                {
+                    return;
+                }
+            }
+
+            bool forceDisableFans = (mode == 0x00 || mode == 0x06);
+
+            if (profile.ApplyFanCurve && !forceDisableFans)
             {
                 _applyCustomFans = true;
                 buttonTurboFanModePower.Activated = true;
+                buttonTurboFanModePower.BorderColor = RForm.colorCustom;
                 SaveState("Fan_CurveEnabled", 1);
                 _fanRampUp = profile.FanRampUp;
                 ApplyActiveFanControl();
             }
-            else if (_applyCustomFans)
+            else if (_applyCustomFans || forceDisableFans)
             {
                 _applyCustomFans = false;
                 buttonTurboFanModePower.Activated = false;
+                buttonTurboFanModePower.BorderColor = borderSecond;
                 SaveState("Fan_CurveEnabled", 0);
                 _fanRampUp = 1;
                 RestoreAutoFanControl();
@@ -614,19 +730,26 @@ namespace PreySense
 
         private static int GetSpeedFromCurve(PointF[] curve, float currentTemp)
         {
-            if (curve == null || curve.Length == 0) return 0;
+            if (curve == null || curve.Length == 0) return 10;
             var sorted = curve.OrderBy(p => p.X).ToArray();
-            if (currentTemp <= sorted[0].X) return (int)sorted[0].Y;
-            if (currentTemp >= sorted[sorted.Length - 1].X) return (int)sorted[sorted.Length - 1].Y;
-            for (int i = 0; i < sorted.Length - 1; i++)
+            
+            float speed;
+            if (currentTemp <= sorted[0].X)
+                speed = sorted[0].Y;
+            else if (currentTemp >= sorted[sorted.Length - 1].X)
+                speed = sorted[sorted.Length - 1].Y;
+            else
             {
-                if (currentTemp >= sorted[i].X && currentTemp <= sorted[i + 1].X)
+                int i = 0;
+                for (; i < sorted.Length - 1; i++)
                 {
-                    float t = (currentTemp - sorted[i].X) / (sorted[i + 1].X - sorted[i].X);
-                    return (int)(sorted[i].Y + t * (sorted[i + 1].Y - sorted[i].Y));
+                    if (currentTemp >= sorted[i].X && currentTemp <= sorted[i + 1].X)
+                        break;
                 }
+                float t = (currentTemp - sorted[i].X) / (sorted[i + 1].X - sorted[i].X);
+                speed = sorted[i].Y + t * (sorted[i + 1].Y - sorted[i].Y);
             }
-            return 0;
+            return Math.Clamp((int)Math.Round(speed), 10, 100);
         }
 
         #endregion
@@ -815,7 +938,7 @@ namespace PreySense
 
         private void LoadCurrentHardwarePowerMode()
         {
-            Task.Run(() =>
+            Task.Run(async () =>
             {
                 byte detectedMode;
 
@@ -824,14 +947,14 @@ namespace PreySense
                     AppLogger.Log($"LoadCurrentHardwarePowerMode: startup Quick Access SystemUsageControl 0x{quickAccessMode:X2}.");
                     detectedMode = quickAccessMode;
                 }
-                else if (_wmi.TryGetPowerProfileAcerService(out byte acerMode) && IsKnownPowerMode(acerMode))
+                else if (_wmi.TryGetPowerProfileWmi(out byte wmiMode) && IsKnownPowerMode(wmiMode))
                 {
-                    AppLogger.Log($"LoadCurrentHardwarePowerMode: startup AcerService OPERATING_MODE 0x{acerMode:X2}.");
-                    detectedMode = acerMode;
+                    AppLogger.Log($"LoadCurrentHardwarePowerMode: startup WMI operating mode 0x{wmiMode:X2}.");
+                    detectedMode = wmiMode;
                 }
                 else
                 {
-                    AppLogger.Log("LoadCurrentHardwarePowerMode: could not read a valid AcerService OPERATING_MODE.");
+                    AppLogger.Log("LoadCurrentHardwarePowerMode: could not read a valid WMI operating mode.");
                     return;
                 }
 
@@ -848,7 +971,7 @@ namespace PreySense
                 {
                     string modeName = PreySense.Mode.ProfileManager.ModeToProfileName(detectedMode);
                     AppLogger.Log($"LoadCurrentHardwarePowerMode: applying startup profile settings for '{modeName}'.");
-                    PreySense.Mode.ProfileManager.ApplyProfile(modeName);
+                    await PreySense.Mode.ProfileManager.ApplyProfileAsync(modeName);
                 }
                 catch (Exception ex)
                 {
@@ -867,6 +990,11 @@ namespace PreySense
         /// </summary>
         public void HandleModeNumberKey(int number)
         {
+            if ((DateTime.Now - _lastDirectModeShortcutTime).TotalMilliseconds < ModeToastDebounceMs)
+            {
+                return;
+            }
+
             byte mode = number switch
             {
                 1 => 0x06, // Eco

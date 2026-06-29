@@ -36,13 +36,7 @@ namespace PreySense.Overlay
         public static int?   gpuMhz;
         public static float? cpuVoltage;
 
-        private static PerformanceCounter? _cpuPowerCounter;
-        private static bool _cpuPowerCounterFailed;
-        private static bool _cpuPowerInitStarted;
-        private static int _cpuPowerNullTicks;
-        private static int _cpuPowerReadErrors;
-        private const int CpuPowerMaxReadErrors = 3;
-        private static readonly string[] _powerCounterInstances = { "Apu Power", "RAPL_Package0_PKG", "CPU Power", "Socket Power", "Current Socket Power" };
+
 
         private static PerformanceCounter? _cpuPerfCounter;
         private static int _maxCpuSpeed = -1;
@@ -112,57 +106,10 @@ namespace PreySense.Overlay
 
         public static void ResetCPUPowerCounter()
         {
-            _cpuPowerReadErrors = 0;
-            _cpuPowerCounterFailed = false;
         }
 
         public static void InitCPUPowerAsync()
         {
-            if (_cpuPowerInitStarted) return;
-            _cpuPowerInitStarted = true;
-
-            Task.Run(() =>
-            {
-                var cached = AppConfig.GetString("cpu_power_counter");
-                if (!string.IsNullOrEmpty(cached))
-                {
-                    try
-                    {
-                        var counter = new PerformanceCounter("Energy Meter", "Power", cached, true);
-                        counter.NextValue();
-                        _cpuPowerCounter = counter;
-                        return;
-                    }
-                    catch
-                    {
-                        AppConfig.Set("cpu_power_counter", "");
-                    }
-                }
-
-                try
-                {
-                    var category = new PerformanceCounterCategory("Energy Meter");
-                    var instances = category.GetInstanceNames();
-
-                    foreach (var name in _powerCounterInstances)
-                    {
-                        if (instances.Contains(name, StringComparer.OrdinalIgnoreCase))
-                        {
-                            var counter = new PerformanceCounter("Energy Meter", "Power", name, true);
-                            counter.NextValue();
-                            _cpuPowerCounter = counter;
-                            AppConfig.Set("cpu_power_counter", name);
-                            return;
-                        }
-                    }
-
-                    _cpuPowerCounterFailed = true;
-                }
-                catch
-                {
-                    _cpuPowerCounterFailed = true;
-                }
-            });
         }
 
         public static void InitCpuSpeedCounter()
@@ -211,28 +158,6 @@ namespace PreySense.Overlay
 
         public static float? GetCPUPower()
         {
-            if (_cpuPowerCounterFailed || _cpuPowerCounter == null) return null;
-
-            try
-            {
-                float mW = _cpuPowerCounter.NextValue();
-                if (mW > 0) return mW / 1000f;
-            }
-            catch
-            {
-                _cpuPowerCounter?.Dispose();
-                _cpuPowerCounter = null;
-                if (++_cpuPowerReadErrors >= CpuPowerMaxReadErrors)
-                {
-                    _cpuPowerCounterFailed = true;
-                }
-                else
-                {
-                    _cpuPowerCounterFailed = false;
-                    _cpuPowerInitStarted = false;
-                }
-            }
-
             return null;
         }
 
@@ -321,20 +246,24 @@ namespace PreySense.Overlay
             catch { vramUsedMb = null; vramUsage = null; }
 
             cpuPower = null;
-            if (cpuPower == null || cpuPower <= 0)
+            try
             {
-                InitCPUPowerAsync();
-                float? newCpu = GetCPUPower();
-                if (newCpu > 0)
+                var msr = PreySense.Mode.PowerLimitController.GetMsr();
+                if (msr != null)
                 {
-                    cpuPower = newCpu;
-                    _cpuPowerNullTicks = 0;
-                }
-                else if (++_cpuPowerNullTicks >= 5)
-                {
-                    cpuPower = null;
+                    float? newCpu = msr.GetPackagePower();
+                    if (newCpu.HasValue && newCpu.Value > 0)
+                    {
+                        cpuPower = newCpu;
+                    }
                 }
             }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"PawnIO CPU power read failed: {ex.Message}");
+            }
+
+
 
             gpuPower = GetGPUPower();
             cpuMhz = null;

@@ -60,9 +60,9 @@ namespace PreySense.Overlay
 
         private const int DragMinAlpha = 110;
         private static readonly SolidBrush _dragBgBrush = new(Color.FromArgb(DragMinAlpha, 0, 0, 0));
-        private int _bgAlpha = 185;
+        private int _bgAlpha = 100;
 
-        private SolidBrush _bgBrush = new(Color.FromArgb(185, 0, 0, 0));
+        private SolidBrush _bgBrush = new(Color.FromArgb(100, 0, 0, 0));
         private SolidBrush _gpuBrush = new(DefaultGpuColor);
         private SolidBrush _cpuBrush = new(DefaultCpuColor);
         private static readonly Pen _graphCpuPen = new(Color.FromArgb(44, 124, 180), 1.5f);
@@ -92,7 +92,7 @@ namespace PreySense.Overlay
         private readonly float[] _gpuHistory = new float[HistoryLength];
         private int _historyHead = 0;
 
-        private const int OverlayPollIntervalMs = 500;
+        private const int OverlayPollIntervalMs = 1000;
         private const int FpsZeroLingerMs = 3000;
         private const int FpsPositiveShowDelayMs = 1000;
         private readonly System.Timers.Timer _timer = new(OverlayPollIntervalMs) { AutoReset = true };

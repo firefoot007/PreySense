@@ -141,15 +141,7 @@ namespace PreySense
             SaveState("GpuBatteryAuto", enabled ? 1 : 0);
         }
 
-        private void CheckCalibration()
-        {
-            // CPU limit calibration has been replaced by hardcoded per-mode defaults.
-        }
 
-        public async Task RunCalibrationAsync()
-        {
-            return;
-        }
 
         private void OpenFansForm()
         {

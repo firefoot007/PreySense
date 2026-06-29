@@ -58,22 +58,42 @@ namespace PreySense.Gpu
             try
             {
                 string appDir = AppDomain.CurrentDomain.BaseDirectory;
-                string primaryPath = Path.Combine("C:\\", filename);
+                string appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "PreySense");
+                string appDataPath = Path.Combine(appDataDir, filename);
+                string tempPath = Path.Combine(Path.GetTempPath(), filename);
                 string fallbackPath = Path.Combine(appDir, filename);
                 string targetPath = "";
 
-                if (File.Exists(primaryPath))
+                if (File.Exists(appDataPath))
                 {
-                    targetPath = primaryPath;
+                    targetPath = appDataPath;
+                }
+                else if (File.Exists(tempPath))
+                {
+                    targetPath = tempPath;
                 }
                 else if (File.Exists(fallbackPath))
                 {
-                    targetPath = fallbackPath;
+                    try
+                    {
+                        if (!Directory.Exists(appDataDir))
+                        {
+                            Directory.CreateDirectory(appDataDir);
+                        }
+                        File.Copy(fallbackPath, appDataPath, true);
+                        AppLogger.Log($"Copied registry display profile to LocalAppData: {appDataPath}");
+                        targetPath = appDataPath;
+                    }
+                    catch (Exception ex)
+                    {
+                        AppLogger.Log($"Failed to copy registry display profile to AppData: {ex.Message}");
+                        targetPath = fallbackPath;
+                    }
                 }
 
                 if (string.IsNullOrEmpty(targetPath))
                 {
-                    AppLogger.Log($"Registry display profile '{filename}' not found in C:\\ or app directory.");
+                    AppLogger.Log($"Registry display profile '{filename}' not found in AppData, Temp, or app directory.");
                     return;
                 }
 

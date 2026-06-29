@@ -310,7 +310,7 @@ namespace PreySense
             // checkRunOnStartup
             // 
             checkRunOnStartup.AutoSize = true;
-            checkRunOnStartup.BackColor = buttonSecond;
+            checkRunOnStartup.BackColor = Color.Transparent;
             checkRunOnStartup.Dock = DockStyle.Left;
             checkRunOnStartup.Location = new Point(20, 0);
             checkRunOnStartup.Margin = new Padding(11, 0, 11, 0);
@@ -1041,7 +1041,7 @@ namespace PreySense
             // checkAutoGpuBattery
             // 
             checkAutoGpuBattery.AutoSize = true;
-            checkAutoGpuBattery.BackColor = buttonSecond;
+            checkAutoGpuBattery.BackColor = Color.Transparent;
             checkAutoGpuBattery.Dock = DockStyle.Right;
             checkAutoGpuBattery.Location = new Point(442, 0);
             checkAutoGpuBattery.Margin = new Padding(11, 0, 11, 0);
