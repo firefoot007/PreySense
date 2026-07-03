@@ -419,5 +419,35 @@ namespace PreySense.Gpu
             if (GetGpuState() != GpuState.Active) return null;
             return NvmlHelper.GetMemoryInfo();
         }
+
+        public int? GetGpuClock()
+        {
+            if (!IsValid) return null;
+            if (GetGpuState() != GpuState.Active) return null;
+            return NvmlHelper.GetGpuClock();
+        }
+
+        public int? GetGpuMemoryClock()
+        {
+            if (!IsValid) return null;
+            if (GetGpuState() != GpuState.Active) return null;
+            return NvmlHelper.GetGpuMemoryClock();
+        }
+
+        public float? GetGpuVoltage()
+        {
+            if (!IsValid) return null;
+            if (GetGpuState() != GpuState.Active) return null;
+            try
+            {
+                var status = GPUApi.GetCurrentVoltage(_internalGpu!.Handle);
+                if (status.ValueInMicroVolt > 0)
+                {
+                    return (float)(status.ValueInMicroVolt / 1000000.0);
+                }
+            }
+            catch { }
+            return null;
+        }
     }
 }

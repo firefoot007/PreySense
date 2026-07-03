@@ -217,7 +217,7 @@ namespace PreySense
             _footerQuickActions.MetricsIcon = GetThemeIcon(ResizeImageToSize(Properties.Resources.icons8_soonvibes_32, 18, 18));
             _footerQuickActions.ApplyTheme(buttonSecond, foreMain, borderSecond);
             _footerQuickActions.KeyboardClicked += (_, _) => OpenRgbForm();
-            _footerQuickActions.MetricsClicked += (_, _) => OpenMetricsOverlay();
+            _footerQuickActions.MetricsClicked += (_, _) => OpenMetricsSettings();
 
             tableButtons.SuspendLayout();
             tableButtons.Controls.Clear();

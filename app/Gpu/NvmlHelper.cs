@@ -13,6 +13,7 @@ namespace PreySense.Gpu
         [DllImport(NvmlDll)] static extern int nvmlDeviceGetHandleByIndex_v2(uint index, out IntPtr device);
         [DllImport(NvmlDll)] static extern int nvmlDeviceGetPowerUsage(IntPtr device, out uint powerMilliWatts);
         [DllImport(NvmlDll)] static extern int nvmlDeviceGetMemoryInfo(IntPtr device, out nvmlMemory_t memory);
+        [DllImport(NvmlDll)] static extern int nvmlDeviceGetClockInfo(IntPtr device, int clockType, out uint clockMHz);
 
         [StructLayout(LayoutKind.Sequential)]
         struct nvmlMemory_t { public ulong total; public ulong free; public ulong used; }
@@ -67,6 +68,38 @@ namespace PreySense.Gpu
                     if (mem.total == 0) return null;
                     const ulong MB = 1024 * 1024;
                     return ((long)(mem.used / MB), (long)(mem.total / MB));
+                }
+                catch { return null; }
+            }
+        }
+
+        public static int? GetGpuClock(uint gpuIndex = 0)
+        {
+            lock (_lock)
+            {
+                Init();
+                if (!_init) return null;
+                try
+                {
+                    if (nvmlDeviceGetHandleByIndex_v2(gpuIndex, out IntPtr device) != NVML_SUCCESS) return null;
+                    if (nvmlDeviceGetClockInfo(device, 0, out uint clockMHz) != NVML_SUCCESS) return null;
+                    return (int)clockMHz;
+                }
+                catch { return null; }
+            }
+        }
+
+        public static int? GetGpuMemoryClock(uint gpuIndex = 0)
+        {
+            lock (_lock)
+            {
+                Init();
+                if (!_init) return null;
+                try
+                {
+                    if (nvmlDeviceGetHandleByIndex_v2(gpuIndex, out IntPtr device) != NVML_SUCCESS) return null;
+                    if (nvmlDeviceGetClockInfo(device, 2, out uint clockMHz) != NVML_SUCCESS) return null; // 2 = NVML_CLOCK_MEM
+                    return (int)clockMHz;
                 }
                 catch { return null; }
             }

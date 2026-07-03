@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using System.Text.RegularExpressions;
 using PreySense.Gpu;
 using PreySense.Helpers;
+using System.Runtime.InteropServices;
 
 namespace PreySense.Overlay
 {
@@ -35,11 +36,35 @@ namespace PreySense.Overlay
         public static int?   cpuMhz;
         public static int?   gpuMhz;
         public static float? cpuVoltage;
+        public static float? gpuVoltage;
+        public static int?   ramSpeedMhz;
+        public static int?   vramSpeedMhz;
 
-
-
-        private static PerformanceCounter? _cpuPerfCounter;
-        private static int _maxCpuSpeed = -1;
+        private static readonly LibreHardwareMonitor.Hardware.Computer _lhm = new()
+        {
+            IsCpuEnabled = true,
+            IsGpuEnabled = false,
+            IsMemoryEnabled = false,
+            IsMotherboardEnabled = false,
+            IsControllerEnabled = false,
+            IsNetworkEnabled = false,
+            IsStorageEnabled = false
+        };
+        private static bool _lhmOpened = false;
+        private static float? _lhmCpuTemp;
+        private static void EnsureLhmOpen()
+        {
+            if (_lhmOpened) return;
+            try
+            {
+                _lhm.Open();
+                _lhmOpened = true;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log("Failed to open LibreHardwareMonitor: " + ex.Message);
+            }
+        }
 
         static HardwareControl()
         {
@@ -112,47 +137,57 @@ namespace PreySense.Overlay
         {
         }
 
-        public static void InitCpuSpeedCounter()
+        public static int GetCpuMhz()
         {
-            if (_maxCpuSpeed > 0) return;
-
-            // 1. Get Max Clock Speed from WMI once
             try
             {
-                using var searcher = new ManagementObjectSearcher("SELECT MaxClockSpeed FROM Win32_Processor");
-                foreach (ManagementObject obj in searcher.Get())
+                EnsureLhmOpen();
+
+                float maxCpuClock = 0;
+                cpuVoltage = null;
+                _lhmCpuTemp = null;
+
+                foreach (var hardware in _lhm.Hardware)
                 {
-                    _maxCpuSpeed = Convert.ToInt32(obj["MaxClockSpeed"]);
-                    break;
+                    hardware.Update();
+
+                    if (hardware.HardwareType == LibreHardwareMonitor.Hardware.HardwareType.Cpu)
+                    {
+                        foreach (var sensor in hardware.Sensors)
+                        {
+                            if (sensor.SensorType == LibreHardwareMonitor.Hardware.SensorType.Clock &&
+                                sensor.Value.HasValue &&
+                                sensor.Name.IndexOf("Bus", StringComparison.OrdinalIgnoreCase) < 0)
+                            {
+                                if (sensor.Value.Value > maxCpuClock)
+                                    maxCpuClock = sensor.Value.Value;
+                            }
+                            else if (sensor.SensorType == LibreHardwareMonitor.Hardware.SensorType.Voltage && sensor.Value.HasValue)
+                            {
+                                if (sensor.Name.IndexOf("Core", StringComparison.OrdinalIgnoreCase) >= 0 || 
+                                    sensor.Name.IndexOf("Vcore", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                    cpuVoltage == null)
+                                {
+                                    cpuVoltage = sensor.Value.Value;
+                                }
+                            }
+                            else if (sensor.SensorType == LibreHardwareMonitor.Hardware.SensorType.Temperature && sensor.Value.HasValue)
+                            {
+                                if (sensor.Name.IndexOf("Package", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                    _lhmCpuTemp == null)
+                                {
+                                    _lhmCpuTemp = sensor.Value.Value;
+                                }
+                            }
+                        }
+                    }
                 }
+                return (int)Math.Round(maxCpuClock);
             }
             catch (Exception ex)
             {
-                AppLogger.Log("Failed to get MaxClockSpeed from WMI: " + ex.Message);
-                _maxCpuSpeed = 3000; // default fallback
-            }
-
-            // 2. Initialize performance counter for cpu performance percentage
-            try
-            {
-                // Try "Processor Information" -> "% Processor Performance"
-                var pc = new PerformanceCounter("Processor Information", "% Processor Performance", "_Total", true);
-                pc.NextValue();
-                _cpuPerfCounter = pc;
-            }
-            catch
-            {
-                try
-                {
-                    // Fallback to "Processor" -> "% of Maximum Frequency"
-                    var pc = new PerformanceCounter("Processor", "% of Maximum Frequency", "_Total", true);
-                    pc.NextValue();
-                    _cpuPerfCounter = pc;
-                }
-                catch (Exception ex)
-                {
-                    AppLogger.Log("Failed to initialize CPU speed performance counter: " + ex.Message);
-                }
+                AppLogger.Log("Error in LHM GetCpuMhz and Volts: " + ex.Message);
+                return 0;
             }
         }
 
@@ -210,12 +245,18 @@ namespace PreySense.Overlay
 
         public static void ReadSensorsOverlay()
         {
+            cpuMhz = GetCpuMhz(); // Call early to update LHM and populate cpuVoltage and _lhmCpuTemp
+
             var wmi = Program.settingsForm?.Wmi;
 
             cpuFanRPM = wmi?.CpuFanRpm;
             gpuFanRPM = wmi?.GpuFanRpm;
 
             cpuTemp = wmi?.CpuTemp ?? -1;
+            if (cpuTemp <= 0 && _lhmCpuTemp.HasValue && _lhmCpuTemp.Value > 0)
+            {
+                cpuTemp = _lhmCpuTemp.Value;
+            }
             gpuTemp = wmi?.GpuTemp ?? -1;
 
             if (GpuControl != null && GpuControl.IsValid)
@@ -266,9 +307,36 @@ namespace PreySense.Overlay
 
 
             gpuPower = GetGPUPower();
-            cpuMhz = null;
-            gpuMhz = null;
-            cpuVoltage = null;
+            try { gpuMhz = GpuControl?.GetGpuClock(); } catch { gpuMhz = null; }
+            
+            ramSpeedMhz = GetRamSpeed();
+            try { vramSpeedMhz = GpuControl?.GetGpuMemoryClock(); } catch { vramSpeedMhz = null; }
+            try { gpuVoltage = GpuControl?.GetGpuVoltage(); } catch { gpuVoltage = null; }
         }
+
+        private static int? _cachedRamSpeed;
+        public static int? GetRamSpeed()
+        {
+            if (_cachedRamSpeed.HasValue) return _cachedRamSpeed;
+            try
+            {
+                using var searcher = new ManagementObjectSearcher("SELECT Speed, ConfiguredClockSpeed FROM Win32_PhysicalMemory");
+                foreach (ManagementObject obj in searcher.Get())
+                {
+                    var speed = obj["ConfiguredClockSpeed"] ?? obj["Speed"];
+                    if (speed != null)
+                      {
+                          int val = Convert.ToInt32(speed);
+                          if (val > 0)
+                          {
+                              _cachedRamSpeed = val;
+                              return val;
+                          }
+                      }
+                  }
+              }
+              catch { }
+              return null;
+          }
     }
 }

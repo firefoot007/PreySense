@@ -170,5 +170,14 @@ namespace PreySense
                 BeginInvoke(new Action(() => overlay.StartOverlay()));
             });
         }
+
+        private void OpenMetricsSettings()
+        {
+            BeginInvoke(new Action(() =>
+            {
+                using var form = new PreySense.UI.MetricsSettingsForm();
+                form.ShowDialog(this);
+            }));
+        }
     }
 }
